@@ -8,7 +8,7 @@ pub enum Type {
     Str,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TypeCheckError;
 
 impl std::fmt::Display for TypeCheckError {
@@ -24,10 +24,7 @@ impl std::error::Error for TypeCheckError {
     }
 }
 
-pub fn type_check(value: &lexpr::Value) -> Result<Type, TypeCheckError> {
-    tc_with_env(value, &mut HashMap::new())
-}
-
+// Assume that the let is only defining one variable
 fn tc_let_with_env<S: BuildHasher>(
     rest_exp: &[lexpr::Value],
     env: &mut HashMap<String, Type, S>,
@@ -35,23 +32,33 @@ fn tc_let_with_env<S: BuildHasher>(
     if rest_exp.len() != 2 {
         return Err(TypeCheckError);
     }
+    // ([x 23]) as vec of 1 element
     let bindings = &rest_exp[0];
     let body = &rest_exp[1];
-    // assume there is just one variable defined in let def list
-    if !bindings.is_list() {
-        return Err(TypeCheckError);
-    }
-    let bindings = bindings.to_vec().unwrap(); // ([x 23]) as vec of 1 element
-    let first_def = &bindings[0]; // [x 23] as lexpr value
-    if !first_def.is_list() {
-        return Err(TypeCheckError);
-    }
-    let first_def = first_def.to_vec().unwrap(); // [x 23] as vec of 2 elements
-    if !first_def[0].is_symbol() {
-        return Err(TypeCheckError);
-    }
-    let exp_type = tc_with_env(&first_def[1], env).unwrap();
-    env.insert(String::from(first_def[0].as_symbol().unwrap()), exp_type);
+
+    // ([x 23]) as vec of 1 element
+    let bindings = match bindings.to_vec() {
+        Some(vec) => vec,
+        None => return Err(TypeCheckError),
+    };
+
+    // [x 23] as lexpr value
+    let binding = &bindings[0];
+
+    // [x 23] as vec of 2 elements
+    let binding = match binding.to_vec() {
+        Some(vec) => vec,
+        None => return Err(TypeCheckError),
+    };
+    let var_name = match binding[0].as_symbol() {
+        Some(val) => val,
+        None => return Err(TypeCheckError),
+    };
+    let exp_type = match tc_with_env(&binding[1], env) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    env.insert(String::from(var_name), exp_type);
     tc_with_env(body, env)
 }
 
@@ -59,16 +66,52 @@ fn tc_if_with_env<S: BuildHasher>(
     rest_exp: &[lexpr::Value],
     env: &mut HashMap<String, Type, S>,
 ) -> Result<Type, TypeCheckError> {
+    // this if statement should be a one liner somehow
     if rest_exp.len() != 3 {
         return Err(TypeCheckError);
     }
-    let predicate = tc_with_env(&rest_exp[0], env).unwrap();
-    let consequent = tc_with_env(&rest_exp[1], env).unwrap();
-    let alternate = tc_with_env(&rest_exp[2], env).unwrap();
+    let predicate = match tc_with_env(&rest_exp[0], env) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    let consequent = match tc_with_env(&rest_exp[1], env) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    let alternate = match tc_with_env(&rest_exp[2], env) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
     if predicate != Type::Bool || consequent != alternate {
-        return Err(TypeCheckError);
+        Err(TypeCheckError)
+    } else {
+        Ok(consequent)
     }
-    Ok(consequent)
+}
+
+fn tc_binop_with_env<S: BuildHasher>(
+    rest_exp: &[lexpr::Value],
+    in1_typ: Type,
+    in2_typ: Type,
+    out_typ: Type,
+    env: &mut HashMap<String, Type, S>,
+) -> Result<Type, TypeCheckError> {
+    if rest_exp.len() != 2 {
+        return Err(TypeCheckError);
+    };
+    let in1 = match tc_with_env(&rest_exp[0], env) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    let in2 = match tc_with_env(&rest_exp[1], env) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    if in1 != in1_typ || in2 != in2_typ {
+        Err(TypeCheckError)
+    } else {
+        Ok(out_typ)
+    }
 }
 
 fn tc_with_env<S: BuildHasher>(
@@ -83,32 +126,26 @@ fn tc_with_env<S: BuildHasher>(
             if !value.is_list() {
                 return Err(TypeCheckError);
             }
-            let lst = value.to_vec().unwrap();
+            let lst = match value.to_vec() {
+                Some(vec) => vec,
+                None => return Err(TypeCheckError),
+            };
             let lst_parts = lst.split_at(1);
             let first = lst_parts.0;
             let rest = lst_parts.1;
-            if !(first[0]).is_symbol() {
-                return Err(TypeCheckError);
-            }
-            let operator = first[0].as_symbol().unwrap();
+
+            // current language does not have any structures in grammar
+            // where S-expression starts with a non-symbol
+            let operator = match first[0].as_symbol() {
+                Some(val) => val,
+                None => return Err(TypeCheckError),
+            };
             match operator {
                 "+" | "*" | "-" | "/" => {
-                    let e1 = tc_with_env(&rest[0], env).unwrap();
-                    let e2 = tc_with_env(&rest[1], env).unwrap();
-                    if e1 == Type::Int && e2 == Type::Int {
-                        Ok(Type::Int)
-                    } else {
-                        Err(TypeCheckError)
-                    }
-                },
+                    tc_binop_with_env(&rest, Type::Int, Type::Int, Type::Int, env)
+                }
                 ">" | "<" | ">=" | "<=" | "=" => {
-                    let e1 = tc_with_env(&rest[0], env).unwrap();
-                    let e2 = tc_with_env(&rest[1], env).unwrap();
-                    if e1 == Type::Int && e2 == Type::Int {
-                        Ok(Type::Bool)
-                    } else {
-                        Err(TypeCheckError)
-                    }
+                    tc_binop_with_env(&rest, Type::Int, Type::Int, Type::Bool, env)
                 }
                 "let" => tc_let_with_env(&rest, env),
                 "if" => tc_if_with_env(&rest, env),
@@ -118,16 +155,17 @@ fn tc_with_env<S: BuildHasher>(
         lexpr::Value::Symbol(x) => match &x[..] {
             "true" => Ok(Type::Bool),
             "false" => Ok(Type::Bool),
-            s => {
-                if env.contains_key(s) {
-                    Ok(env.get(s).unwrap().clone())
-                } else {
-                    Err(TypeCheckError)
-                }
-            }
+            s => match env.get(s) {
+                Some(val) => Ok(val.clone()),
+                None => Err(TypeCheckError),
+            },
         },
         _ => Err(TypeCheckError),
     }
+}
+
+pub fn type_check(value: &lexpr::Value) -> Result<Type, TypeCheckError> {
+    tc_with_env(value, &mut HashMap::new())
 }
 
 #[cfg(test)]
@@ -139,7 +177,7 @@ mod tests {
         let exp = lexpr::from_str("3").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
 
-        let exp = lexpr::from_str("-4").unwrap();
+        let exp = lexpr::from_str("-497").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
 
         let exp = lexpr::from_str("#t").unwrap();
@@ -165,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn typecheck_binops() {
+    fn typecheck_binops_happy() {
         let exp = lexpr::from_str("(+ 3 5)").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
 
@@ -183,14 +221,47 @@ mod tests {
     }
 
     #[test]
-    fn typecheck_let() {
+    fn typecheck_binops_sad() {
+        let exp = lexpr::from_str("(+ 3 true)").unwrap();
+        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+
+        let exp = lexpr::from_str("(* 3 true)").unwrap();
+        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+
+        let exp = lexpr::from_str(r#"(- false "hello")"#).unwrap();
+        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+
+        let exp = lexpr::from_str(r#"(/ "foo" 3)"#).unwrap();
+        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+    }
+
+    #[test]
+    fn typecheck_let_happy() {
         let exp = lexpr::from_str("(let ([x 23]) (+ x 24))").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
     }
 
     #[test]
-    fn typecheck_if() {
+    fn typecheck_let_sad() {
+        // one variable missing
+        let exp = lexpr::from_str("(let ([x 23]) (+ x y))").unwrap();
+        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+    }
+
+    #[test]
+    fn typecheck_if_happy() {
         let exp = lexpr::from_str(r#"(if (< 3 4) 1 -1)"#).unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
+    }
+
+    #[test]
+    fn typecheck_if_sad() {
+        // invalid predicate
+        let exp = lexpr::from_str(r#"(if 3 4 5)"#).unwrap();
+        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+
+        // consequent and alternate do not match
+        let exp = lexpr::from_str(r#"(if (< 3 4) "hello" 5)"#).unwrap();
+        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
     }
 }
