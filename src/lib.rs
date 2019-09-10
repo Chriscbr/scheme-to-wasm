@@ -29,10 +29,14 @@ pub fn type_check(value: &lexpr::Value) -> Result<Type, TypeCheckError> {
 }
 
 fn tc_let_with_env<S: BuildHasher>(
-    bindings: &lexpr::Value,
-    body: &lexpr::Value,
+    rest_exp: &[lexpr::Value],
     env: &mut HashMap<String, Type, S>,
 ) -> Result<Type, TypeCheckError> {
+    if rest_exp.len() != 2 {
+        return Err(TypeCheckError);
+    }
+    let bindings = &rest_exp[0];
+    let body = &rest_exp[1];
     // assume there is just one variable defined in let def list
     if !bindings.is_list() {
         return Err(TypeCheckError);
@@ -49,6 +53,22 @@ fn tc_let_with_env<S: BuildHasher>(
     let exp_type = tc_with_env(&first_def[1], env).unwrap();
     env.insert(String::from(first_def[0].as_symbol().unwrap()), exp_type);
     tc_with_env(body, env)
+}
+
+fn tc_if_with_env<S: BuildHasher>(
+    rest_exp: &[lexpr::Value],
+    env: &mut HashMap<String, Type, S>,
+) -> Result<Type, TypeCheckError> {
+    if rest_exp.len() != 3 {
+        return Err(TypeCheckError);
+    }
+    let predicate = tc_with_env(&rest_exp[0], env).unwrap();
+    let consequent = tc_with_env(&rest_exp[1], env).unwrap();
+    let alternate = tc_with_env(&rest_exp[2], env).unwrap();
+    if predicate != Type::Bool || consequent != alternate {
+        return Err(TypeCheckError);
+    }
+    Ok(consequent)
 }
 
 fn tc_with_env<S: BuildHasher>(
@@ -80,8 +100,18 @@ fn tc_with_env<S: BuildHasher>(
                     } else {
                         Err(TypeCheckError)
                     }
+                },
+                ">" | "<" | ">=" | "<=" | "=" => {
+                    let e1 = tc_with_env(&rest[0], env).unwrap();
+                    let e2 = tc_with_env(&rest[1], env).unwrap();
+                    if e1 == Type::Int && e2 == Type::Int {
+                        Ok(Type::Bool)
+                    } else {
+                        Err(TypeCheckError)
+                    }
                 }
-                "let" => tc_let_with_env(&rest[0], &rest[1], env),
+                "let" => tc_let_with_env(&rest, env),
+                "if" => tc_if_with_env(&rest, env),
                 _ => Err(TypeCheckError),
             }
         }
@@ -155,6 +185,12 @@ mod tests {
     #[test]
     fn typecheck_let() {
         let exp = lexpr::from_str("(let ([x 23]) (+ x 24))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+    }
+
+    #[test]
+    fn typecheck_if() {
+        let exp = lexpr::from_str(r#"(if (< 3 4) 1 -1)"#).unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
     }
 }
