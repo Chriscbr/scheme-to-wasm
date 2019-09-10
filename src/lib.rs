@@ -25,10 +25,36 @@ impl std::error::Error for TypeCheckError {
 }
 
 pub fn type_check(value: &lexpr::Value) -> Result<Type, TypeCheckError> {
-    type_check_with_env(value, &mut HashMap::new())
+    tc_with_env(value, &mut HashMap::new())
 }
 
-pub fn type_check_with_env<S: BuildHasher>(value: &lexpr::Value, env: &mut HashMap<String, Type, S>) -> Result<Type, TypeCheckError> {
+fn tc_let_with_env<S: BuildHasher>(
+    bindings: &lexpr::Value,
+    body: &lexpr::Value,
+    env: &mut HashMap<String, Type, S>,
+) -> Result<Type, TypeCheckError> {
+    // assume there is just one variable defined in let def list
+    if !bindings.is_list() {
+        return Err(TypeCheckError);
+    }
+    let bindings = bindings.to_vec().unwrap(); // ([x 23]) as vec of 1 element
+    let first_def = &bindings[0]; // [x 23] as lexpr value
+    if !first_def.is_list() {
+        return Err(TypeCheckError);
+    }
+    let first_def = first_def.to_vec().unwrap(); // [x 23] as vec of 2 elements
+    if !first_def[0].is_symbol() {
+        return Err(TypeCheckError);
+    }
+    let exp_type = tc_with_env(&first_def[1], env).unwrap();
+    env.insert(String::from(first_def[0].as_symbol().unwrap()), exp_type);
+    tc_with_env(body, env)
+}
+
+fn tc_with_env<S: BuildHasher>(
+    value: &lexpr::Value,
+    env: &mut HashMap<String, Type, S>,
+) -> Result<Type, TypeCheckError> {
     match value {
         lexpr::Value::Number(_) => Ok(Type::Int),
         lexpr::Value::Bool(_) => Ok(Type::Bool),
@@ -47,54 +73,30 @@ pub fn type_check_with_env<S: BuildHasher>(value: &lexpr::Value, env: &mut HashM
             let operator = first[0].as_symbol().unwrap();
             match operator {
                 "+" | "*" | "-" | "/" => {
-                    let e1 = type_check_with_env(&rest[0], env).unwrap();
-                    let e2 = type_check_with_env(&rest[1], env).unwrap();
+                    let e1 = tc_with_env(&rest[0], env).unwrap();
+                    let e2 = tc_with_env(&rest[1], env).unwrap();
                     if e1 == Type::Int && e2 == Type::Int {
                         Ok(Type::Int)
                     } else {
                         Err(TypeCheckError)
                     }
-                },
-                "let" => {
-                    let let_list = &rest[0]; // ([x 23]) as value
-                    // assume there is just one variable defined in let def list
-                    if !let_list.is_list() {
-                        return Err(TypeCheckError);
-                    }
-                    let let_list = let_list.to_vec().unwrap(); // ([x 23]) as vec
-                    let first_def = &let_list[0]; // [x 23] as value
-                    if !first_def.is_list() {
-                        return Err(TypeCheckError);
-                    }
-                    let first_def = first_def.to_vec().unwrap(); // [x 23] as vec
-                    if !first_def[0].is_symbol() {
-                        return Err(TypeCheckError);
-                    }
-                    // let symbol = 
-                    let exp_type = type_check_with_env(&first_def[1], env).unwrap();
-                    env.insert(String::from(first_def[0].as_symbol().unwrap()), exp_type);
-                    let body = &rest[1]; // (+ x 3)
-                    dbg!(body);
-                    // dbg!(env);
-                    type_check_with_env(body, dbg!(env))
                 }
-                _ => Err(TypeCheckError)
-            }
-        },
-        lexpr::Value::Symbol(x) => {
-            match &x[..] {
-                "true" => Ok(Type::Bool),
-                "false" => Ok(Type::Bool),
-                s => {
-                    if env.contains_key(s) {
-                        Ok(env.get(s).unwrap().clone())
-                    } else {
-                        Err(TypeCheckError)
-                    }
-                }
+                "let" => tc_let_with_env(&rest[0], &rest[1], env),
+                _ => Err(TypeCheckError),
             }
         }
-        _ => Err(TypeCheckError)
+        lexpr::Value::Symbol(x) => match &x[..] {
+            "true" => Ok(Type::Bool),
+            "false" => Ok(Type::Bool),
+            s => {
+                if env.contains_key(s) {
+                    Ok(env.get(s).unwrap().clone())
+                } else {
+                    Err(TypeCheckError)
+                }
+            }
+        },
+        _ => Err(TypeCheckError),
     }
 }
 
