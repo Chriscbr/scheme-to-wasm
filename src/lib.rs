@@ -37,19 +37,15 @@ fn tc_binop_with_env<S: BuildHasher>(
     if rest_exp.len() != 2 {
         return Err(TypeCheckError);
     };
-    let in1 = match tc_with_env(&rest_exp[0], env) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
-    let in2 = match tc_with_env(&rest_exp[1], env) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
-    if in1 != in1_typ || in2 != in2_typ {
-        Err(TypeCheckError)
-    } else {
-        Ok(out_typ)
-    }
+    tc_with_env(&rest_exp[0], env).and_then(|in1| {
+        tc_with_env(&rest_exp[1], env).and_then(|in2| {
+            if in1 != in1_typ || in2 != in2_typ {
+                Err(TypeCheckError)
+            } else {
+                Ok(out_typ)
+            }
+        })
+    })
 }
 
 fn tc_if_with_env<S: BuildHasher>(
@@ -60,23 +56,17 @@ fn tc_if_with_env<S: BuildHasher>(
     if rest_exp.len() != 3 {
         return Err(TypeCheckError);
     }
-    let predicate = match tc_with_env(&rest_exp[0], env) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
-    let consequent = match tc_with_env(&rest_exp[1], env) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
-    let alternate = match tc_with_env(&rest_exp[2], env) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
-    if predicate != Type::Bool || consequent != alternate {
-        Err(TypeCheckError)
-    } else {
-        Ok(consequent)
-    }
+    tc_with_env(&rest_exp[0], env).and_then(|predicate| {
+        tc_with_env(&rest_exp[1], env).and_then(|consequent| {
+            tc_with_env(&rest_exp[2], env).and_then(|alternate| {
+                if predicate != Type::Bool || consequent != alternate {
+                    Err(TypeCheckError)
+                } else {
+                    Ok(consequent)
+                }
+            })
+        })
+    })
 }
 
 // Assume that the let is only defining one variable
@@ -142,16 +132,16 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vec<(String, Type)>, TypeCh
         .iter()
         .map(|arg| {
             // [x : int] as a vec
-            let arg_as_vec = match arg.to_vec() {
+            let arg_vec = match arg.to_vec() {
                 Some(vec) => vec,
                 None => return Err(TypeCheckError),
             };
-            if arg_as_vec.len() != 3 {
+            if arg_vec.len() != 3 {
                 return Err(TypeCheckError);
             }
 
             // check there is a separator
-            let separator = match arg_as_vec[1].as_symbol() {
+            let separator = match arg_vec[1].as_symbol() {
                 Some(val) => val,
                 None => return Err(TypeCheckError),
             };
@@ -159,11 +149,11 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vec<(String, Type)>, TypeCh
                 return Err(TypeCheckError);
             }
 
-            let arg_name = match arg_as_vec[0].as_symbol() {
+            let arg_name = match arg_vec[0].as_symbol() {
                 Some(val) => val,
                 None => return Err(TypeCheckError),
             };
-            let arg_type = match convert_annotation_to_type(&arg_as_vec[2]) {
+            let arg_type = match convert_annotation_to_type(&arg_vec[2]) {
                 Ok(typ) => typ,
                 Err(e) => return Err(e),
             };
