@@ -106,7 +106,6 @@ fn tc_let_with_env<S: BuildHasher>(
     tc_with_env(body, env)
 }
 
-// TODO: handle function annotations, e.g. (-> int int bool)
 fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeCheckError> {
     match annotation {
         lexpr::Value::Symbol(val) => match val.as_ref() {
@@ -115,7 +114,34 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeChe
             "string" => Ok(Type::Str),
             _ => Err(TypeCheckError),
         },
-        lexpr::Value::Cons(_) => Err(TypeCheckError),
+        lexpr::Value::Cons(_) => {
+            // an array, ex. [Symbol(->), Symbol(int), Symbol(int), Symbol(bool)]
+            let lst_vec = match annotation.to_vec() {
+                Some(vec) => vec,
+                None => return Err(TypeCheckError),
+            };
+            // ensure that the function annotation has at least -> and a return type as elements
+            if lst_vec.len() < 2 {
+                return Err(TypeCheckError);
+            }
+            match lst_vec[0].as_symbol() {
+                Some("->") => (),
+                _ => return Err(TypeCheckError),
+            };
+            let input_types: Result<Vec<Type>, TypeCheckError> = lst_vec[1..(lst_vec.len() - 1)]
+                .iter()
+                .map(|val| convert_annotation_to_type(val))
+                .collect();
+            let input_types_unwrapped = match input_types {
+                Ok(val) => val,
+                Err(e) => return Err(e),
+            };
+            let return_type = match convert_annotation_to_type(&lst_vec[lst_vec.len() - 1]) {
+                Ok(val) => val,
+                Err(e) => return Err(e),
+            };
+            Ok(Type::Func(input_types_unwrapped, Box::from(return_type)))
+        }
         _ => Err(TypeCheckError),
     }
 }
@@ -339,26 +365,26 @@ mod tests {
     }
 
     #[test]
-    fn typecheck_let_happy() {
+    fn test_typecheck_let_happy() {
         let exp = lexpr::from_str("(let ([x 23]) (+ x 24))").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
     }
 
     #[test]
-    fn typecheck_let_sad() {
+    fn test_typecheck_let_sad() {
         // one variable missing
         let exp = lexpr::from_str("(let ([x 23]) (+ x y))").unwrap();
         assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
     }
 
     #[test]
-    fn typecheck_if_happy() {
+    fn test_test_typecheck_if_happy() {
         let exp = lexpr::from_str(r#"(if (< 3 4) 1 -1)"#).unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
     }
 
     #[test]
-    fn typecheck_if_sad() {
+    fn test_typecheck_if_sad() {
         // invalid predicate
         let exp = lexpr::from_str(r#"(if 3 4 5)"#).unwrap();
         assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
@@ -369,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn typecheck_lambda_happy() {
+    fn test_typecheck_lambda_happy() {
         let exp = lexpr::from_str("(lambda () : int 3)").unwrap();
         assert_eq!(
             type_check(&exp).unwrap(),
@@ -390,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn typecheck_lambda_sad() {
+    fn test_typecheck_lambda_sad() {
         // mismatched return type
         let exp = lexpr::from_str("(lambda () : bool 3)").unwrap();
         assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
@@ -398,5 +424,48 @@ mod tests {
         // input types do not work in body
         let exp = lexpr::from_str("(lambda ((x : bool) (y : bool)) : int (+ x y))").unwrap();
         assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+    }
+
+    #[test]
+    fn test_convert_annotations() {
+        let exp = lexpr::from_str("int").unwrap();
+        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str("bool").unwrap();
+        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Bool);
+
+        let exp = lexpr::from_str("string").unwrap();
+        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Str);
+
+        let exp = lexpr::from_str("(-> int)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::Func(vec![], Box::from(Type::Int))
+        );
+
+        let exp = lexpr::from_str("(-> int int)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::Func(vec![Type::Int], Box::from(Type::Int))
+        );
+
+        let exp = lexpr::from_str("(-> string int bool)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::Func(vec![Type::Str, Type::Int], Box::from(Type::Bool))
+        );
+
+        let exp = lexpr::from_str("(-> (-> int int bool) int int bool)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::Func(
+                vec![
+                    Type::Func(vec![Type::Int, Type::Int], Box::from(Type::Bool)),
+                    Type::Int,
+                    Type::Int
+                ],
+                Box::from(Type::Bool)
+            )
+        );
     }
 }
