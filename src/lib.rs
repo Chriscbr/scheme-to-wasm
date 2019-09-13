@@ -9,12 +9,24 @@ pub enum Type {
     Func(Vec<Type>, Box<Type>), // array of input types, and a return type
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct TypeCheckError;
+#[derive(Clone, Debug)]
+pub struct TypeCheckError(String);
+
+impl Default for TypeCheckError {
+    fn default() -> Self {
+        TypeCheckError::from("Unknown error.")
+    }
+}
+
+impl From<&str> for TypeCheckError {
+    fn from(message: &str) -> Self {
+        TypeCheckError(String::from(message))
+    }
+}
 
 impl std::fmt::Display for TypeCheckError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "TypeCheckError")
+        write!(f, "TypeCheckError: {}", self.0)
     }
 }
 
@@ -35,12 +47,16 @@ fn tc_binop_with_env<S: BuildHasher>(
     env: &mut HashMap<String, Type, S>,
 ) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 2 {
-        return Err(TypeCheckError);
+        return Err(TypeCheckError::from(
+            "Binary operation has incorrect number of parameters.",
+        ));
     };
     tc_with_env(&rest_exp[0], env).and_then(|in1| {
         tc_with_env(&rest_exp[1], env).and_then(|in2| {
             if in1 != in1_typ || in2 != in2_typ {
-                Err(TypeCheckError)
+                Err(TypeCheckError::from(
+                    "Binary operation parameters do not match expected types.",
+                ))
             } else {
                 Ok(out_typ)
             }
@@ -52,15 +68,22 @@ fn tc_if_with_env<S: BuildHasher>(
     rest_exp: &[lexpr::Value],
     env: &mut HashMap<String, Type, S>,
 ) -> Result<Type, TypeCheckError> {
-    // this if statement should be a one liner somehow
     if rest_exp.len() != 3 {
-        return Err(TypeCheckError);
+        return Err(TypeCheckError::from(
+            "If expression has incorrect number of values.",
+        ));
     }
     tc_with_env(&rest_exp[0], env).and_then(|predicate| {
         tc_with_env(&rest_exp[1], env).and_then(|consequent| {
             tc_with_env(&rest_exp[2], env).and_then(|alternate| {
-                if predicate != Type::Bool || consequent != alternate {
-                    Err(TypeCheckError)
+                if predicate != Type::Bool {
+                    Err(TypeCheckError::from(
+                        "Predicate in if expression does not evaluate to a boolean value.",
+                    ))
+                } else if consequent != alternate {
+                    Err(TypeCheckError::from(
+                        "Consequent and alternate values in if expression do not match types.",
+                    ))
                 } else {
                     Ok(consequent)
                 }
@@ -75,7 +98,9 @@ fn tc_let_with_env<S: BuildHasher>(
     env: &mut HashMap<String, Type, S>,
 ) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 2 {
-        return Err(TypeCheckError);
+        return Err(TypeCheckError::from(
+            "Let expression has incorrect number of values.",
+        ));
     }
     let bindings = &rest_exp[0]; // ([x 23]) as vec of 1 element
     let body = &rest_exp[1];
@@ -83,7 +108,11 @@ fn tc_let_with_env<S: BuildHasher>(
     // ([x 23]) as vec of 1 element
     let bindings = match bindings.to_vec() {
         Some(vec) => vec,
-        None => return Err(TypeCheckError),
+        None => {
+            return Err(TypeCheckError::from(
+                "Let expression bindings are not in a proper list.",
+            ))
+        }
     };
 
     // [x 23] as lexpr value
@@ -92,11 +121,19 @@ fn tc_let_with_env<S: BuildHasher>(
     // [x 23] as vec of 2 elements
     let binding = match binding.to_vec() {
         Some(vec) => vec,
-        None => return Err(TypeCheckError),
+        None => {
+            return Err(TypeCheckError::from(
+                "Let expression binding is not a proper list.",
+            ))
+        }
     };
     let var_name = match binding[0].as_symbol() {
         Some(val) => val,
-        None => return Err(TypeCheckError),
+        None => {
+            return Err(TypeCheckError::from(
+                "Let expression binding does not have a symbol on the left hand side.",
+            ))
+        }
     };
     let exp_type = match tc_with_env(&binding[1], env) {
         Ok(typ) => typ,
@@ -112,21 +149,33 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeChe
             "int" => Ok(Type::Int),
             "bool" => Ok(Type::Bool),
             "string" => Ok(Type::Str),
-            _ => Err(TypeCheckError),
+            _ => Err(TypeCheckError::from(
+                "Type annotation not recognized as a valid type.",
+            )),
         },
         lexpr::Value::Cons(_) => {
             // an array, ex. [Symbol(->), Symbol(int), Symbol(int), Symbol(bool)]
             let lst_vec = match annotation.to_vec() {
                 Some(vec) => vec,
-                None => return Err(TypeCheckError),
+                None => {
+                    return Err(TypeCheckError::from(
+                        "Type annotation for function is not a valid list.",
+                    ))
+                }
             };
             // ensure that the function annotation has at least -> and a return type as elements
             if lst_vec.len() < 2 {
-                return Err(TypeCheckError);
+                return Err(TypeCheckError::from(
+                    "Type annotation for function is missing values.",
+                ));
             }
             match lst_vec[0].as_symbol() {
                 Some("->") => (),
-                _ => return Err(TypeCheckError),
+                _ => {
+                    return Err(TypeCheckError::from(
+                        "Type annotation for function does not have -> as first symbol.",
+                    ))
+                }
             };
             let input_types: Result<Vec<Type>, TypeCheckError> = lst_vec[1..(lst_vec.len() - 1)]
                 .iter()
@@ -142,7 +191,9 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeChe
             };
             Ok(Type::Func(input_types_unwrapped, Box::from(return_type)))
         }
-        _ => Err(TypeCheckError),
+        _ => Err(TypeCheckError::from(
+            "Type annotation is invalid or is missing.",
+        )),
     }
 }
 
@@ -152,7 +203,11 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeChe
 fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vec<(String, Type)>, TypeCheckError> {
     let arg_list = match args.to_vec() {
         Some(vec) => vec,
-        None => return Err(TypeCheckError),
+        None => {
+            return Err(TypeCheckError::from(
+                "Lambda arguments are not in a valid list.",
+            ))
+        }
     };
     arg_list
         .iter()
@@ -160,24 +215,36 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vec<(String, Type)>, TypeCh
             // [x : int] as a vec
             let arg_vec = match arg.to_vec() {
                 Some(vec) => vec,
-                None => return Err(TypeCheckError),
+                None => return Err(TypeCheckError::from("Lambda argument is not a valid list.")),
             };
             if arg_vec.len() != 3 {
-                return Err(TypeCheckError);
+                return Err(TypeCheckError::from(
+                    "Lambda argument is missing values or contains extra values.",
+                ));
             }
 
             // check there is a separator
             let separator = match arg_vec[1].as_symbol() {
                 Some(val) => val,
-                None => return Err(TypeCheckError),
+                None => {
+                    return Err(TypeCheckError::from(
+                        "Lambda argument does not contain the correct : separator.",
+                    ))
+                }
             };
             if separator != ":" {
-                return Err(TypeCheckError);
+                return Err(TypeCheckError::from(
+                    "Lambda argument does not contain the correct : separator.",
+                ));
             }
 
             let arg_name = match arg_vec[0].as_symbol() {
                 Some(val) => val,
-                None => return Err(TypeCheckError),
+                None => {
+                    return Err(TypeCheckError::from(
+                        "Lambda argument does not have a valid name.",
+                    ))
+                }
             };
             let arg_type = match convert_annotation_to_type(&arg_vec[2]) {
                 Ok(typ) => typ,
@@ -193,7 +260,7 @@ fn tc_lambda_with_env<S: BuildHasher>(
     env: &mut HashMap<String, Type, S>,
 ) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 4 {
-        return Err(TypeCheckError);
+        return Err(TypeCheckError::from("Lambda expression contains incorrect number of values. Perhaps you are missing the return type?"));
     }
     let args = match unwrap_lambda_args(&rest_exp[0]) {
         Ok(val) => val,
@@ -211,27 +278,89 @@ fn tc_lambda_with_env<S: BuildHasher>(
     // check there is a separator
     let separator = match rest_exp[1].as_symbol() {
         Some(val) => val,
-        None => return Err(TypeCheckError),
+        None => return Err(TypeCheckError::from("Lambda expression does not have a separator between the arguments list and return type.")),
     };
     if separator != ":" {
-        return Err(TypeCheckError);
+        return Err(TypeCheckError::from("Lambda expression does not have the correct separator : between the arguments list and return type."));
     }
 
     // get the (annotated) return type
     let ret_type = match convert_annotation_to_type(&rest_exp[2]) {
-        Ok(typ) => typ,
+        Ok(typ) => dbg!(typ),
         Err(e) => return Err(e),
     };
     // type check lambda body
-    let body_type = match tc_with_env(&rest_exp[3], env) {
-        Ok(typ) => typ,
+    let body_type = match tc_with_env(dbg!(&rest_exp[3]), dbg!(env)) {
+        Ok(typ) => dbg!(typ),
         Err(e) => return Err(e),
     };
     if ret_type != body_type {
-        return Err(TypeCheckError);
+        return Err(TypeCheckError::from(
+            "Lambda expression body type does not match the expected return type.",
+        ));
     }
 
     Ok(Type::Func(arg_types, Box::from(ret_type)))
+}
+
+fn check_type_arrays_equal(arr1: &[Type], arr2: &[Type]) -> bool {
+    if arr1.len() != arr2.len() {
+        return false;
+    }
+    arr1.iter().zip(arr2.iter()).all(|(typ1, typ2)| match typ1 {
+        Type::Func(arg_types1, ret_type_boxed1) => match typ2 {
+            Type::Func(arg_types2, ret_type_boxed2) => {
+                check_type_arrays_equal(arg_types1, arg_types2)
+                    && (*ret_type_boxed1 == *ret_type_boxed2)
+            }
+            _ => false,
+        },
+        _ => typ1 == typ2,
+    })
+}
+
+fn check_lambda_type_with_inputs(
+    fn_type: &Type,
+    param_types: &[Type],
+) -> Result<Type, TypeCheckError> {
+    match fn_type {
+        Type::Func(arg_types, ret_type_boxed) => {
+            let ret_type = ret_type_boxed.as_ref();
+            if check_type_arrays_equal(&arg_types, &param_types) {
+                Ok((*ret_type).clone())
+            } else {
+                Err(TypeCheckError::from(
+                    "Argument types and parameter types of function application do not match.",
+                ))
+            }
+        }
+        _ => Err(TypeCheckError::from("Expected a function type.")),
+    }
+}
+
+fn tc_apply_with_env<S: BuildHasher>(
+    first_exp: &lexpr::Value,
+    rest_exp: &[lexpr::Value],
+    env: &mut HashMap<String, Type, S>,
+) -> Result<Type, TypeCheckError> {
+    match tc_with_env(first_exp, env) {
+        Ok(typ) => {
+            let param_types_wrapped = tc_array_with_env(&rest_exp, env);
+            let param_types = match param_types_wrapped {
+                Ok(val) => val,
+                Err(e) => return Err(e),
+            };
+            check_lambda_type_with_inputs(&typ, &param_types)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn tc_array_with_env<S: BuildHasher>(
+    values: &[lexpr::Value],
+    env: &mut HashMap<String, Type, S>,
+) -> Result<Vec<Type>, TypeCheckError> {
+    values.iter().map(|val| tc_with_env(val, env)).collect()
 }
 
 // TODO: current "env" model only modifies the existing environment;
@@ -251,34 +380,51 @@ fn tc_with_env<S: BuildHasher>(
         lexpr::Value::Bool(_) => Ok(Type::Bool),
         lexpr::Value::String(_) => Ok(Type::Str),
         lexpr::Value::Cons(_) => {
-            if !value.is_list() {
-                return Err(TypeCheckError);
-            }
             let lst = match value.to_vec() {
                 Some(vec) => vec,
-                None => return Err(TypeCheckError),
+                None => return Err(TypeCheckError::from("Cons expression is not a valid list.")),
             };
+            // our language currently does not assign () to any meaning
+            if lst.is_empty() {
+                return Err(TypeCheckError::from("Empty list found."));
+            }
             let lst_parts = lst.split_at(1);
-            let first = lst_parts.0;
+            let first = &(lst_parts.0)[0];
             let rest = lst_parts.1;
 
-            // current language does not have any structures in grammar
-            // where S-expression starts with a non-symbol
-            let operator = match first[0].as_symbol() {
-                Some(val) => val,
-                None => return Err(TypeCheckError),
-            };
-            match operator {
-                "+" | "*" | "-" | "/" => {
-                    tc_binop_with_env(&rest, Type::Int, Type::Int, Type::Int, env)
-                }
-                ">" | "<" | ">=" | "<=" | "=" => {
-                    tc_binop_with_env(&rest, Type::Int, Type::Int, Type::Bool, env)
-                }
-                "if" => tc_if_with_env(&rest, env),
-                "let" => tc_let_with_env(&rest, env),
-                "lambda" => tc_lambda_with_env(&rest, env),
-                _ => Err(TypeCheckError),
+            // type-checking an S-expression can be two cases, depending on the
+            // type of the first value
+            // - it could be a primitive operation or a Special Form, in which case
+            //   we check the symbol manually and perform the right type check
+            // - it could be an expression which needs to be evaluated (ex. a lambda)
+            //   in which case we perform a general function-application type check
+            match first.as_symbol() {
+                Some(val) => match val {
+                    "+" | "*" | "-" | "/" => {
+                        tc_binop_with_env(&rest, Type::Int, Type::Int, Type::Int, env)
+                    }
+                    ">" | "<" | ">=" | "<=" | "=" => {
+                        tc_binop_with_env(&rest, Type::Int, Type::Int, Type::Bool, env)
+                    }
+                    "if" => tc_if_with_env(&rest, env),
+                    "let" => tc_let_with_env(&rest, env),
+                    "lambda" => tc_lambda_with_env(&rest, env),
+                    s => {
+                        let fn_type = match env.get(s) {
+                            Some(fn_type) => fn_type,
+                            None => {
+                                return Err(TypeCheckError::from("Not a recognized function name."))
+                            }
+                        }
+                        .clone();
+                        let param_types = match tc_array_with_env(&rest, env) {
+                            Ok(val) => val,
+                            Err(e) => return Err(e),
+                        };
+                        check_lambda_type_with_inputs(&fn_type, &param_types)
+                    }
+                },
+                None => tc_apply_with_env(&first, &rest, env),
             }
         }
         lexpr::Value::Symbol(x) => match &x[..] {
@@ -286,10 +432,12 @@ fn tc_with_env<S: BuildHasher>(
             "false" => Ok(Type::Bool),
             s => match env.get(s) {
                 Some(val) => Ok(val.clone()),
-                None => Err(TypeCheckError),
+                None => Err(TypeCheckError::from("Not a recognized function name.")),
             },
         },
-        _ => Err(TypeCheckError),
+        _ => Err(TypeCheckError::from(
+            "Unrecognized form of expression found.",
+        )),
     }
 }
 
@@ -352,16 +500,16 @@ mod tests {
     #[test]
     fn typecheck_binops_sad() {
         let exp = lexpr::from_str("(+ 3 true)").unwrap();
-        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+        assert_eq!(type_check(&exp).is_err(), true);
 
         let exp = lexpr::from_str("(* 3 true)").unwrap();
-        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+        assert_eq!(type_check(&exp).is_err(), true);
 
         let exp = lexpr::from_str(r#"(- false "hello")"#).unwrap();
-        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+        assert_eq!(type_check(&exp).is_err(), true);
 
         let exp = lexpr::from_str(r#"(/ "foo" 3)"#).unwrap();
-        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+        assert_eq!(type_check(&exp).is_err(), true);
     }
 
     #[test]
@@ -374,7 +522,7 @@ mod tests {
     fn test_typecheck_let_sad() {
         // one variable missing
         let exp = lexpr::from_str("(let ([x 23]) (+ x y))").unwrap();
-        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+        assert_eq!(type_check(&exp).is_err(), true);
     }
 
     #[test]
@@ -387,11 +535,11 @@ mod tests {
     fn test_typecheck_if_sad() {
         // invalid predicate
         let exp = lexpr::from_str(r#"(if 3 4 5)"#).unwrap();
-        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+        assert_eq!(type_check(&exp).is_err(), true);
 
         // consequent and alternate do not match
         let exp = lexpr::from_str(r#"(if (< 3 4) "hello" 5)"#).unwrap();
-        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+        assert_eq!(type_check(&exp).is_err(), true);
     }
 
     #[test]
@@ -413,17 +561,70 @@ mod tests {
             type_check(&exp).unwrap(),
             Type::Func(vec![Type::Int, Type::Int], Box::from(Type::Int))
         );
+
+        let exp = lexpr::from_str(
+            "(lambda ((fn : (-> int int bool)) (x : int) (y : int)) : bool (fn x y))",
+        )
+        .unwrap();
+        assert_eq!(
+            type_check(&exp).unwrap(),
+            Type::Func(
+                vec![
+                    Type::Func(vec![Type::Int, Type::Int], Box::from(Type::Bool)),
+                    Type::Int,
+                    Type::Int
+                ],
+                Box::from(Type::Bool)
+            )
+        );
     }
 
     #[test]
     fn test_typecheck_lambda_sad() {
         // mismatched return type
         let exp = lexpr::from_str("(lambda () : bool 3)").unwrap();
-        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+        assert_eq!(type_check(&exp).is_err(), true);
 
         // input types do not work in body
         let exp = lexpr::from_str("(lambda ((x : bool) (y : bool)) : int (+ x y))").unwrap();
-        assert_eq!(type_check(&exp).unwrap_err(), TypeCheckError);
+        assert_eq!(type_check(&exp).is_err(), true);
+    }
+
+    #[test]
+    fn test_type_check_apply_happy() {
+        let exp = lexpr::from_str("((lambda () : int 3))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str("((lambda ((x : int)) : bool (< x 5)) 3)").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Bool);
+
+        let exp = lexpr::from_str("((lambda ((x : int) (y : int)) : int (* x y)) 5 6)").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str("((lambda ((x : int) (y : int)) : int (* x y)) 5 6)").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+    }
+
+    #[test]
+    fn test_type_check_apply_hof_happy() {
+        // Note: this is basically (apply (lambda equivalent to <) 3 5)
+        let exp = lexpr::from_str("((lambda ((fn : (-> int int bool)) (x : int) (y : int)) : bool (fn x y)) (lambda ((a : int) (b : int)) : bool (< a b)) 3 5)").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Bool);
+    }
+
+    #[test]
+    fn test_type_check_apply_sad() {
+        // missing parameters
+        let exp = lexpr::from_str("((lambda ((x : int)) : bool (< x 5)))").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // too many parameters
+        let exp = lexpr::from_str("((lambda ((x : int)) : bool (< x 5)) 3 5)").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // arg type does not match param type
+        let exp = lexpr::from_str("((lambda ((x : int)) : bool (< x 5)) true)").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
     }
 
     #[test]
@@ -467,5 +668,63 @@ mod tests {
                 Box::from(Type::Bool)
             )
         );
+    }
+
+    #[test]
+    fn test_check_type_arrays_equal_happy() {
+        let types1 = vec![Type::Int, Type::Bool, Type::Str];
+        let types2 = vec![Type::Int, Type::Bool, Type::Str];
+        assert_eq!(check_type_arrays_equal(&types1, &types2), true);
+
+        let types1 = vec![Type::Func(vec![], Box::from(Type::Int))];
+        let types2 = vec![Type::Func(vec![], Box::from(Type::Int))];
+        assert_eq!(check_type_arrays_equal(&types1, &types2), true);
+
+        let types1 = vec![Type::Func(
+            vec![Type::Int, Type::Int],
+            Box::from(Type::Bool),
+        )];
+        let types2 = vec![Type::Func(
+            vec![Type::Int, Type::Int],
+            Box::from(Type::Bool),
+        )];
+        assert_eq!(check_type_arrays_equal(&types1, &types2), true);
+    }
+
+    #[test]
+    fn test_check_type_arrays_equal_sad() {
+        // types reordered
+        let types1 = vec![Type::Int, Type::Bool, Type::Str];
+        let types2 = vec![Type::Int, Type::Str, Type::Bool];
+        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
+
+        // arr1 shorter
+        let types1 = vec![Type::Int];
+        let types2 = vec![Type::Int, Type::Str, Type::Bool];
+        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
+
+        // arr2 shorter
+        let types1 = vec![Type::Int, Type::Bool, Type::Str];
+        let types2 = vec![Type::Int];
+        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
+
+        // return types differ
+        let types1 = vec![Type::Func(
+            vec![Type::Int, Type::Int],
+            Box::from(Type::Bool),
+        )];
+        let types2 = vec![Type::Func(vec![Type::Int, Type::Int], Box::from(Type::Str))];
+        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
+
+        // input types differ
+        let types1 = vec![Type::Func(
+            vec![Type::Int, Type::Int],
+            Box::from(Type::Bool),
+        )];
+        let types2 = vec![Type::Func(
+            vec![Type::Int, Type::Str],
+            Box::from(Type::Bool),
+        )];
+        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
     }
 }
