@@ -6,6 +6,7 @@ pub enum Type {
     Int,
     Bool,
     Str,
+    List(Box<Type>),
     Func(Vec<Type>, Box<Type>), // array of input types, and a return type
 }
 
@@ -164,32 +165,48 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeChe
                 }
             };
             // ensure that the function annotation has at least -> and a return type as elements
-            if lst_vec.len() < 2 {
-                return Err(TypeCheckError::from(
-                    "Type annotation for function is missing values.",
-                ));
+            if lst_vec.len() < 1 {
+                return Err(TypeCheckError::from("Type annotation is missing values."));
             }
             match lst_vec[0].as_symbol() {
-                Some("->") => (),
-                _ => {
-                    return Err(TypeCheckError::from(
-                        "Type annotation for function does not have -> as first symbol.",
-                    ))
+                Some("->") => {
+                    if lst_vec.len() < 2 {
+                        return Err(TypeCheckError::from(
+                            "Type annotation for function is missing values.",
+                        ));
+                    }
+                    let input_types: Result<Vec<Type>, TypeCheckError> = lst_vec
+                        [1..(lst_vec.len() - 1)]
+                        .iter()
+                        .map(|val| convert_annotation_to_type(val))
+                        .collect();
+                    let input_types_unwrapped = match input_types {
+                        Ok(val) => val,
+                        Err(e) => return Err(e),
+                    };
+                    let return_type = match convert_annotation_to_type(&lst_vec[lst_vec.len() - 1])
+                    {
+                        Ok(val) => val,
+                        Err(e) => return Err(e),
+                    };
+                    Ok(Type::Func(input_types_unwrapped, Box::from(return_type)))
                 }
-            };
-            let input_types: Result<Vec<Type>, TypeCheckError> = lst_vec[1..(lst_vec.len() - 1)]
-                .iter()
-                .map(|val| convert_annotation_to_type(val))
-                .collect();
-            let input_types_unwrapped = match input_types {
-                Ok(val) => val,
-                Err(e) => return Err(e),
-            };
-            let return_type = match convert_annotation_to_type(&lst_vec[lst_vec.len() - 1]) {
-                Ok(val) => val,
-                Err(e) => return Err(e),
-            };
-            Ok(Type::Func(input_types_unwrapped, Box::from(return_type)))
+                Some("list") => {
+                    if lst_vec.len() != 2 {
+                        return Err(TypeCheckError::from(
+                            "Type annotation for list has incorrect number of values.",
+                        ));
+                    }
+                    let lst_type = match convert_annotation_to_type(&lst_vec[1]) {
+                        Ok(typ) => typ,
+                        Err(e) => return Err(e),
+                    };
+                    Ok(Type::List(Box::from(lst_type)))
+                }
+                _ => Err(TypeCheckError::from(
+                    r#"Type annotation for function does not have "->" or "list" as first symbol."#,
+                )),
+            }
         }
         _ => Err(TypeCheckError::from(
             "Type annotation is invalid or is missing.",
@@ -286,12 +303,12 @@ fn tc_lambda_with_env<S: BuildHasher>(
 
     // get the (annotated) return type
     let ret_type = match convert_annotation_to_type(&rest_exp[2]) {
-        Ok(typ) => dbg!(typ),
+        Ok(typ) => typ,
         Err(e) => return Err(e),
     };
     // type check lambda body
-    let body_type = match tc_with_env(dbg!(&rest_exp[3]), dbg!(env)) {
-        Ok(typ) => dbg!(typ),
+    let body_type = match tc_with_env(&rest_exp[3], env) {
+        Ok(typ) => typ,
         Err(e) => return Err(e),
     };
     if ret_type != body_type {
@@ -363,6 +380,89 @@ fn tc_array_with_env<S: BuildHasher>(
     values.iter().map(|val| tc_with_env(val, env)).collect()
 }
 
+fn tc_cons_with_env<S: BuildHasher>(
+    rest_exp: &[lexpr::Value],
+    env: &mut HashMap<String, Type, S>,
+) -> Result<Type, TypeCheckError> {
+    if rest_exp.len() != 2 {
+        return Err(TypeCheckError::from(
+            "Cons contains incorrect number of expressions.",
+        ));
+    }
+    let car_type = match tc_with_env(&rest_exp[0], env) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    let cdr_type = match tc_with_env(&rest_exp[1], env) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    match cdr_type {
+        Type::List(boxed_type) => {
+            if *boxed_type == car_type {
+                Ok(Type::List(boxed_type))
+            } else {
+                Err(TypeCheckError::from(
+                    "Car of cons does not match type of cdr.",
+                ))
+            }
+        }
+        _ => Err(TypeCheckError::from(
+            "Cdr of cons expression is not a list type.",
+        )),
+    }
+}
+
+fn tc_car_with_env<S: BuildHasher>(
+    rest_exp: &[lexpr::Value],
+    env: &mut HashMap<String, Type, S>,
+) -> Result<Type, TypeCheckError> {
+    if rest_exp.len() != 1 {
+        return Err(TypeCheckError::from(
+            "Car contains incorrect number of expressions.",
+        ));
+    }
+    match tc_with_env(&rest_exp[0], env) {
+        Ok(lst_type) => match lst_type {
+            Type::List(boxed_type) => Ok(*boxed_type),
+            _ => Err(TypeCheckError::from(
+                "Expression in car is not a list type.",
+            )),
+        },
+        Err(e) => Err(e),
+    }
+}
+
+fn tc_cdr_with_env<S: BuildHasher>(
+    rest_exp: &[lexpr::Value],
+    env: &mut HashMap<String, Type, S>,
+) -> Result<Type, TypeCheckError> {
+    if rest_exp.len() != 1 {
+        return Err(TypeCheckError::from(
+            "Cdr contains incorrect number of expressions.",
+        ));
+    }
+    match tc_with_env(&rest_exp[0], env) {
+        Ok(lst_type) => match lst_type {
+            Type::List(boxed_type) => Ok(Type::List(boxed_type)),
+            _ => Err(TypeCheckError::from(
+                "Expression in cdr is not a list type.",
+            )),
+        },
+        Err(e) => Err(e),
+    }
+}
+
+fn tc_null(rest_exp: &[lexpr::Value]) -> Result<Type, TypeCheckError> {
+    if rest_exp.len() != 1 {
+        return Err(TypeCheckError::from("Invalid null expression."));
+    }
+    match convert_annotation_to_type(&rest_exp[0]) {
+        Ok(typ) => Ok(Type::List(Box::from(typ))),
+        Err(e) => Err(e),
+    }
+}
+
 // TODO: current "env" model only modifies the existing environment;
 // this is likely unsafe once we try evaluating expressions that reuse
 // binding names in different local scopes
@@ -406,9 +506,15 @@ fn tc_with_env<S: BuildHasher>(
                     ">" | "<" | ">=" | "<=" | "=" => {
                         tc_binop_with_env(&rest, Type::Int, Type::Int, Type::Bool, env)
                     }
+                    "concat" => tc_binop_with_env(&rest, Type::Str, Type::Str, Type::Str, env),
                     "if" => tc_if_with_env(&rest, env),
                     "let" => tc_let_with_env(&rest, env),
                     "lambda" => tc_lambda_with_env(&rest, env),
+                    "cons" => tc_cons_with_env(&rest, env),
+                    "car" => tc_car_with_env(&rest, env),
+                    "cdr" => tc_cdr_with_env(&rest, env),
+                    "null?" => Ok(Type::Bool),
+                    "null" => tc_null(&rest),
                     s => {
                         let fn_type = match env.get(s) {
                             Some(fn_type) => fn_type,
@@ -495,6 +601,9 @@ mod tests {
 
         let exp = lexpr::from_str("(+ (* 4 5) (- 5 2))").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str(r#"(concat "hello " "world")"#).unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Str);
     }
 
     #[test]
@@ -509,6 +618,69 @@ mod tests {
         assert_eq!(type_check(&exp).is_err(), true);
 
         let exp = lexpr::from_str(r#"(/ "foo" 3)"#).unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+    }
+
+    #[test]
+    fn typecheck_lists_happy() {
+        let exp = lexpr::from_str("(null int)").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+
+        let exp = lexpr::from_str("(null bool)").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Bool)));
+
+        let exp = lexpr::from_str("(cons 3 (null int))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+
+        let exp = lexpr::from_str("(cons 3 (cons 4 (null int)))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+
+        let exp = lexpr::from_str(r#"(cons "foo" (cons "bar" (null string)))"#).unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Str)));
+
+        // NOTE: these two cases probably looks weird, but it is the simplest solution
+        // we can just assume car/cdr of an empty list is the type of the list's items
+        // or the type of the list respectively (or that the program just panics?)
+        let exp = lexpr::from_str("(car (null int))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str("(cdr (null int))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+
+        let exp = lexpr::from_str("(car (cons 3 (null int)))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str("(cdr (cons 3 (null int)))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+
+        let exp = lexpr::from_str("(null? (null int))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Bool);
+    }
+
+    #[test]
+    fn typecheck_lists_sad() {
+        // missing type
+        let exp = lexpr::from_str("(null)").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // not valid in our language
+        let exp = lexpr::from_str("null").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // too many types
+        let exp = lexpr::from_str("(null int bool)").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // type of car does not match type of cdr
+        let exp = lexpr::from_str(r#"(cons "hey" (null int))"#).unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // invalid argument to car
+        let exp = lexpr::from_str("(car 3)").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // invalid argument to cdr
+        let exp = lexpr::from_str("(cdr 3)").unwrap();
         assert_eq!(type_check(&exp).is_err(), true);
     }
 
@@ -533,6 +705,10 @@ mod tests {
 
     #[test]
     fn test_typecheck_if_sad() {
+        // missing alternate
+        let exp = lexpr::from_str(r#"(if (< 3 4) 4)"#).unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
         // invalid predicate
         let exp = lexpr::from_str(r#"(if 3 4 5)"#).unwrap();
         assert_eq!(type_check(&exp).is_err(), true);
@@ -610,6 +786,27 @@ mod tests {
         // Note: this is basically (apply (lambda equivalent to <) 3 5)
         let exp = lexpr::from_str("((lambda ((fn : (-> int int bool)) (x : int) (y : int)) : bool (fn x y)) (lambda ((a : int) (b : int)) : bool (< a b)) 3 5)").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Bool);
+
+        // "map" is recursive, so without implementing type-checking for define,
+        // (which would create the binding from "map" to its type signature)
+        // we must add the name to the environment for the unit test
+        let exp = lexpr::from_str(
+            "(lambda ((f : (-> int int)) (lst : (list int))) : (list int)
+                (if (null? lst)
+                    (null int)
+                    (cons (f (car lst)) (map f (cdr lst)))))",
+        )
+        .unwrap();
+        let map_type = Type::Func(
+            vec![
+                Type::Func(vec![Type::Int], Box::from(Type::Int)),
+                Type::List(Box::from(Type::Int)),
+            ],
+            Box::from(Type::List(Box::from(Type::Int))),
+        ); // (-> (-> int int) (list int) (list int))
+        let mut env = HashMap::new();
+        env.insert(String::from("map"), map_type.clone());
+        assert_eq!(tc_with_env(&exp, &mut env).unwrap(), map_type);
     }
 
     #[test]
@@ -637,6 +834,18 @@ mod tests {
 
         let exp = lexpr::from_str("string").unwrap();
         assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Str);
+
+        let exp = lexpr::from_str("(list int)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::List(Box::from(Type::Int))
+        );
+
+        let exp = lexpr::from_str("(list (list int))").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::List(Box::from(Type::List(Box::from(Type::Int))))
+        );
 
         let exp = lexpr::from_str("(-> int)").unwrap();
         assert_eq!(
