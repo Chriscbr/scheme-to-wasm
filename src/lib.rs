@@ -165,7 +165,7 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeChe
                 }
             };
             // ensure that the function annotation has at least -> and a return type as elements
-            if lst_vec.len() < 1 {
+            if lst_vec.is_empty() {
                 return Err(TypeCheckError::from("Type annotation is missing values."));
             }
             match lst_vec[0].as_symbol() {
