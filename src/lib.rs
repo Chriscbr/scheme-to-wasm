@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::hash::BuildHasher;
+use std::collections::LinkedList;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -10,14 +9,40 @@ pub enum Type {
     Func(Vec<Type>, Box<Type>), // array of input types, and a return type
 }
 
-#[derive(Clone, Debug)]
-pub struct TypeCheckError(String);
+#[derive(Default)]
+pub struct Env {
+    frames: LinkedList<Vec<(String, Type)>>,
+}
 
-impl Default for TypeCheckError {
-    fn default() -> Self {
-        TypeCheckError::from("Unknown error.")
+impl Env {
+    pub fn new() -> Self {
+        Env {
+            frames: LinkedList::new(),
+        }
+    }
+
+    pub fn push_frame(&mut self, frame: Vec<(String, Type)>) {
+        self.frames.push_front(frame)
+    }
+
+    pub fn pop_frame(&mut self) -> Option<Vec<(String, Type)>> {
+        self.frames.pop_front()
+    }
+
+    pub fn find(&mut self, key: &str) -> Option<Type> {
+        for vec in self.frames.iter() {
+            for pair in vec.iter() {
+                if pair.0 == key {
+                    return Some(pair.1.clone());
+                }
+            }
+        }
+        None
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct TypeCheckError(String);
 
 impl From<&str> for TypeCheckError {
     fn from(message: &str) -> Self {
@@ -40,12 +65,12 @@ impl std::error::Error for TypeCheckError {
     }
 }
 
-fn tc_binop_with_env<S: BuildHasher>(
+fn tc_binop_with_env(
     rest_exp: &[lexpr::Value],
     in1_typ: Type,
     in2_typ: Type,
     out_typ: Type,
-    env: &mut HashMap<String, Type, S>,
+    env: &mut Env,
 ) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 2 {
         return Err(TypeCheckError::from(
@@ -65,10 +90,7 @@ fn tc_binop_with_env<S: BuildHasher>(
     })
 }
 
-fn tc_if_with_env<S: BuildHasher>(
-    rest_exp: &[lexpr::Value],
-    env: &mut HashMap<String, Type, S>,
-) -> Result<Type, TypeCheckError> {
+fn tc_if_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 3 {
         return Err(TypeCheckError::from(
             "If expression has incorrect number of values.",
@@ -94,10 +116,7 @@ fn tc_if_with_env<S: BuildHasher>(
 }
 
 // TODO: add support for let expressions with more than one binding
-fn tc_let_with_env<S: BuildHasher>(
-    rest_exp: &[lexpr::Value],
-    env: &mut HashMap<String, Type, S>,
-) -> Result<Type, TypeCheckError> {
+fn tc_let_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 2 {
         return Err(TypeCheckError::from(
             "Let expression has incorrect number of values.",
@@ -140,8 +159,10 @@ fn tc_let_with_env<S: BuildHasher>(
         Ok(typ) => typ,
         Err(e) => return Err(e),
     };
-    env.insert(String::from(var_name), exp_type);
-    tc_with_env(body, env)
+    env.push_frame(vec![(String::from(var_name), exp_type)]);
+    let typ = tc_with_env(body, env);
+    env.pop_frame();
+    typ
 }
 
 fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeCheckError> {
@@ -272,10 +293,7 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vec<(String, Type)>, TypeCh
         .collect()
 }
 
-fn tc_lambda_with_env<S: BuildHasher>(
-    rest_exp: &[lexpr::Value],
-    env: &mut HashMap<String, Type, S>,
-) -> Result<Type, TypeCheckError> {
+fn tc_lambda_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 4 {
         return Err(TypeCheckError::from("Lambda expression contains incorrect number of values. Perhaps you are missing the return type?"));
     }
@@ -285,11 +303,8 @@ fn tc_lambda_with_env<S: BuildHasher>(
     };
 
     // add arg types to the type environment for use in the body
-    args.iter().for_each(|pair| {
-        let arg_name = &pair.0;
-        let arg_type = &pair.1;
-        env.insert(String::from(arg_name), arg_type.clone());
-    });
+    env.push_frame(args.clone());
+
     let arg_types: Vec<Type> = args.iter().map(|pair| pair.1.clone()).collect();
 
     // check there is a separator
@@ -316,6 +331,9 @@ fn tc_lambda_with_env<S: BuildHasher>(
             "Lambda expression body type does not match the expected return type.",
         ));
     }
+
+    // remove local variables from environment since body has been type checked
+    env.pop_frame();
 
     Ok(Type::Func(arg_types, Box::from(ret_type)))
 }
@@ -355,10 +373,10 @@ fn check_lambda_type_with_inputs(
     }
 }
 
-fn tc_apply_with_env<S: BuildHasher>(
+fn tc_apply_with_env(
     first_exp: &lexpr::Value,
     rest_exp: &[lexpr::Value],
-    env: &mut HashMap<String, Type, S>,
+    env: &mut Env,
 ) -> Result<Type, TypeCheckError> {
     match tc_with_env(first_exp, env) {
         Ok(typ) => {
@@ -373,17 +391,11 @@ fn tc_apply_with_env<S: BuildHasher>(
     }
 }
 
-fn tc_array_with_env<S: BuildHasher>(
-    values: &[lexpr::Value],
-    env: &mut HashMap<String, Type, S>,
-) -> Result<Vec<Type>, TypeCheckError> {
+fn tc_array_with_env(values: &[lexpr::Value], env: &mut Env) -> Result<Vec<Type>, TypeCheckError> {
     values.iter().map(|val| tc_with_env(val, env)).collect()
 }
 
-fn tc_cons_with_env<S: BuildHasher>(
-    rest_exp: &[lexpr::Value],
-    env: &mut HashMap<String, Type, S>,
-) -> Result<Type, TypeCheckError> {
+fn tc_cons_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 2 {
         return Err(TypeCheckError::from(
             "Cons contains incorrect number of expressions.",
@@ -413,10 +425,7 @@ fn tc_cons_with_env<S: BuildHasher>(
     }
 }
 
-fn tc_car_with_env<S: BuildHasher>(
-    rest_exp: &[lexpr::Value],
-    env: &mut HashMap<String, Type, S>,
-) -> Result<Type, TypeCheckError> {
+fn tc_car_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 1 {
         return Err(TypeCheckError::from(
             "Car contains incorrect number of expressions.",
@@ -433,10 +442,7 @@ fn tc_car_with_env<S: BuildHasher>(
     }
 }
 
-fn tc_cdr_with_env<S: BuildHasher>(
-    rest_exp: &[lexpr::Value],
-    env: &mut HashMap<String, Type, S>,
-) -> Result<Type, TypeCheckError> {
+fn tc_cdr_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, TypeCheckError> {
     if rest_exp.len() != 1 {
         return Err(TypeCheckError::from(
             "Cdr contains incorrect number of expressions.",
@@ -471,10 +477,7 @@ fn tc_null(rest_exp: &[lexpr::Value]) -> Result<Type, TypeCheckError> {
 //   (but the typechecker performance is not important, so skip this)
 // - perhaps use immutable environment to enforce type environment changes
 //   only penetrating inner scopes
-fn tc_with_env<S: BuildHasher>(
-    value: &lexpr::Value,
-    env: &mut HashMap<String, Type, S>,
-) -> Result<Type, TypeCheckError> {
+fn tc_with_env(value: &lexpr::Value, env: &mut Env) -> Result<Type, TypeCheckError> {
     match value {
         lexpr::Value::Number(_) => Ok(Type::Int),
         lexpr::Value::Bool(_) => Ok(Type::Bool),
@@ -500,6 +503,9 @@ fn tc_with_env<S: BuildHasher>(
             //   in which case we perform a general function-application type check
             match first.as_symbol() {
                 Some(val) => match val {
+                    "and" | "or" => {
+                        tc_binop_with_env(&rest, Type::Bool, Type::Bool, Type::Bool, env)
+                    }
                     "+" | "*" | "-" | "/" => {
                         tc_binop_with_env(&rest, Type::Int, Type::Int, Type::Int, env)
                     }
@@ -516,7 +522,7 @@ fn tc_with_env<S: BuildHasher>(
                     "null?" => Ok(Type::Bool),
                     "null" => tc_null(&rest),
                     s => {
-                        let fn_type = match env.get(s) {
+                        let fn_type = match env.find(s) {
                             Some(fn_type) => fn_type,
                             None => {
                                 return Err(TypeCheckError::from("Not a recognized function name."))
@@ -536,7 +542,7 @@ fn tc_with_env<S: BuildHasher>(
         lexpr::Value::Symbol(x) => match &x[..] {
             "true" => Ok(Type::Bool),
             "false" => Ok(Type::Bool),
-            s => match env.get(s) {
+            s => match env.find(s) {
                 Some(val) => Ok(val.clone()),
                 None => Err(TypeCheckError::from("Not a recognized function name.")),
             },
@@ -548,7 +554,7 @@ fn tc_with_env<S: BuildHasher>(
 }
 
 pub fn type_check(value: &lexpr::Value) -> Result<Type, TypeCheckError> {
-    tc_with_env(value, &mut HashMap::new())
+    tc_with_env(value, &mut Env::new())
 }
 
 #[cfg(test)]
@@ -604,6 +610,12 @@ mod tests {
 
         let exp = lexpr::from_str(r#"(concat "hello " "world")"#).unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Str);
+
+        let exp = lexpr::from_str("(and true false)").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Bool);
+
+        let exp = lexpr::from_str("(or true false)").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Bool);
     }
 
     #[test]
@@ -618,6 +630,15 @@ mod tests {
         assert_eq!(type_check(&exp).is_err(), true);
 
         let exp = lexpr::from_str(r#"(/ "foo" 3)"#).unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        let exp = lexpr::from_str(r#"(concat 3 "world")"#).unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        let exp = lexpr::from_str(r#"(and 3 6)"#).unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        let exp = lexpr::from_str(r#"(or "hello" "world")"#).unwrap();
         assert_eq!(type_check(&exp).is_err(), true);
     }
 
@@ -688,14 +709,6 @@ mod tests {
     fn test_typecheck_let_happy() {
         let exp = lexpr::from_str("(let ((x 23)) (+ x 24))").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
-
-        let exp = lexpr::from_str(
-            r#"(let ((x "hello"))
-                    (let ((x 23))
-                        (+ x 24)))"#,
-        )
-        .unwrap();
-        assert_eq!(type_check(&exp).unwrap(), Type::Int);
     }
 
     #[test]
@@ -703,10 +716,36 @@ mod tests {
         // one variable missing
         let exp = lexpr::from_str("(let ([x 23]) (+ x y))").unwrap();
         assert_eq!(type_check(&exp).is_err(), true);
+    }
 
-        // // binding lasts past its scope
-        // let exp = lexpr::from_str("(+ (let ((x 5)) (+ x 3)) x)").unwrap();
-        // assert_eq!(type_check(&exp).is_err(), true);
+    #[test]
+    fn test_typecheck_local_scoping() {
+        // local variable overrides outer variable
+        let exp = lexpr::from_str(
+            r#"(let ((x "hello"))
+                    (let ((x 23))
+                        (+ x 24)))"#,
+        )
+        .unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+        // binding from let lasts past its scope
+        let exp = lexpr::from_str("(+ (let ((x 5)) (+ x 3)) x)").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // binding from lambda lasts past its scope
+        let exp = lexpr::from_str("(+ ((lambda ((x : int)) : int x) 3) x)").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // let bindings with same names of conflicting types
+        let exp =
+            lexpr::from_str("(and (let ((x 5)) (< x 3)) (let ((x false)) (or x true)))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Bool);
+
+        // lambda bindings with same names of conflicting types
+        let exp =
+            lexpr::from_str("(and ((lambda ((x : int)) : bool (< x 3)) 5) ((lambda ((x : bool)) : bool (and x true)) false))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Bool);
     }
 
     #[test]
@@ -816,8 +855,8 @@ mod tests {
             ],
             Box::from(Type::List(Box::from(Type::Int))),
         ); // (-> (-> int int) (list int) (list int))
-        let mut env = HashMap::new();
-        env.insert(String::from("map"), map_type.clone());
+        let mut env = Env::new();
+        env.push_frame(vec![(String::from("map"), map_type.clone())]);
         assert_eq!(tc_with_env(&exp, &mut env).unwrap(), map_type);
     }
 
