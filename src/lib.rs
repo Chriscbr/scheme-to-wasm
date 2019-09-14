@@ -93,7 +93,7 @@ fn tc_if_with_env<S: BuildHasher>(
     })
 }
 
-// Assume that the let is only defining one variable
+// TODO: add support for let expressions with more than one binding
 fn tc_let_with_env<S: BuildHasher>(
     rest_exp: &[lexpr::Value],
     env: &mut HashMap<String, Type, S>,
@@ -686,7 +686,15 @@ mod tests {
 
     #[test]
     fn test_typecheck_let_happy() {
-        let exp = lexpr::from_str("(let ([x 23]) (+ x 24))").unwrap();
+        let exp = lexpr::from_str("(let ((x 23)) (+ x 24))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str(
+            r#"(let ((x "hello"))
+                    (let ((x 23))
+                        (+ x 24)))"#,
+        )
+        .unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
     }
 
@@ -695,6 +703,10 @@ mod tests {
         // one variable missing
         let exp = lexpr::from_str("(let ([x 23]) (+ x y))").unwrap();
         assert_eq!(type_check(&exp).is_err(), true);
+
+        // // binding lasts past its scope
+        // let exp = lexpr::from_str("(+ (let ((x 5)) (+ x 3)) x)").unwrap();
+        // assert_eq!(type_check(&exp).is_err(), true);
     }
 
     #[test]
