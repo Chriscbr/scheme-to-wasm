@@ -29,11 +29,11 @@ impl Env {
         self.frames.pop_front()
     }
 
-    pub fn find(&mut self, key: &str) -> Option<Type> {
+    pub fn find(&mut self, key: &str) -> Option<&Type> {
         for vec in self.frames.iter() {
             for pair in vec.iter() {
                 if pair.0 == key {
-                    return Some(pair.1.clone());
+                    return Some(&pair.1);
                 }
             }
         }
@@ -305,8 +305,6 @@ fn tc_lambda_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, 
     // add arg types to the type environment for use in the body
     env.push_frame(args.clone());
 
-    let arg_types: Vec<Type> = args.iter().map(|pair| pair.1.clone()).collect();
-
     // check there is a separator
     let separator = match rest_exp[1].as_symbol() {
         Some(val) => val,
@@ -335,6 +333,7 @@ fn tc_lambda_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, 
     // remove local variables from environment since body has been type checked
     env.pop_frame();
 
+    let arg_types: Vec<Type> = args.iter().map(|pair| pair.1.clone()).collect();
     Ok(Type::Func(arg_types, Box::from(ret_type)))
 }
 
@@ -469,6 +468,58 @@ fn tc_null(rest_exp: &[lexpr::Value]) -> Result<Type, TypeCheckError> {
     }
 }
 
+fn tc_begin_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, TypeCheckError> {
+    if rest_exp.is_empty() {
+        return Err(TypeCheckError::from("Begin contains no expressions."));
+    }
+    // Note: it's important that even though we only return the type of the
+    // last expression within the 'begin' S-expression, we still want to
+    // type-check the entire array in case any type errors pop up
+    match tc_array_with_env(rest_exp, env) {
+        // the alternative here is:
+        // Ok(types) => Ok(types[types.len() - 1].clone()),
+        Ok(mut types) => Ok(types.remove(types.len() - 1)),
+        Err(e) => Err(e),
+    }
+}
+
+// set! returns the value that is being assigned, for lack of better options
+fn tc_set_bang_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, TypeCheckError> {
+    if rest_exp.len() != 2 {
+        return Err(TypeCheckError::from(
+            "Set contains incorrect number of expressions.",
+        ));
+    }
+    let var_name = match rest_exp[0].as_symbol() {
+        Some(val) => val,
+        None => {
+            return Err(TypeCheckError::from(
+                "Variable in set! expression is not a valid symbol.",
+            ))
+        }
+    };
+    let expected_type = match env.find(var_name) {
+        Some(typ) => typ.clone(),
+        None => {
+            return Err(TypeCheckError::from(
+                "Variable assignment cannot occur before it has been defined!",
+            ))
+        }
+    };
+    match tc_with_env(&rest_exp[1], env) {
+        Ok(typ) => {
+            if typ == expected_type {
+                Ok(typ)
+            } else {
+                Err(TypeCheckError::from(
+                    "Type of set! body does not match variable's initialized type.",
+                ))
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
 // TODO: current "env" model only modifies the existing environment;
 // this is likely unsafe once we try evaluating expressions that reuse
 // binding names in different local scopes
@@ -516,6 +567,8 @@ fn tc_with_env(value: &lexpr::Value, env: &mut Env) -> Result<Type, TypeCheckErr
                     "if" => tc_if_with_env(&rest, env),
                     "let" => tc_let_with_env(&rest, env),
                     "lambda" => tc_lambda_with_env(&rest, env),
+                    "begin" => tc_begin_with_env(&rest, env),
+                    "set!" => tc_set_bang_with_env(&rest, env),
                     "cons" => tc_cons_with_env(&rest, env),
                     "car" => tc_car_with_env(&rest, env),
                     "cdr" => tc_cdr_with_env(&rest, env),
@@ -562,7 +615,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn typecheck_prims() {
+    fn test_typecheck_prims() {
         let exp = lexpr::from_str("3").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
 
@@ -592,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    fn typecheck_binops_happy() {
+    fn test_typecheck_binops_happy() {
         let exp = lexpr::from_str("(+ 3 5)").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Int);
 
@@ -619,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn typecheck_binops_sad() {
+    fn test_typecheck_binops_sad() {
         let exp = lexpr::from_str("(+ 3 true)").unwrap();
         assert_eq!(type_check(&exp).is_err(), true);
 
@@ -643,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn typecheck_lists_happy() {
+    fn test_typecheck_lists_happy() {
         let exp = lexpr::from_str("(null int)").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
 
@@ -679,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn typecheck_lists_sad() {
+    fn test_typecheck_lists_sad() {
         // missing type
         let exp = lexpr::from_str("(null)").unwrap();
         assert_eq!(type_check(&exp).is_err(), true);
@@ -719,6 +772,37 @@ mod tests {
     }
 
     #[test]
+    fn test_typecheck_sideeffects_happy() {
+        let exp = lexpr::from_str("(begin (+ 3 5))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str("(begin (+ 3 5) (- 4 1))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str("(let ((x 3)) (set! x 7))").unwrap();
+        assert_eq!(type_check(&exp).unwrap(), Type::Int);
+    }
+
+    #[test]
+    fn test_typecheck_sideeffects_sad() {
+        // begin expression is missing arguments
+        let exp = lexpr::from_str(r#"(begin)"#).unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // intermediary expression in begin is not valid
+        let exp = lexpr::from_str(r#"(begin (+ 3 "hello") (- 4 1))"#).unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // last expression in begin is not valid
+        let exp = lexpr::from_str(r#"(begin (+ 3 4) (- 4 "hello"))"#).unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+
+        // using set! before variable is defined
+        let exp = lexpr::from_str("(set! x 7)").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
+    }
+
+    #[test]
     fn test_typecheck_local_scoping() {
         // local variable overrides outer variable
         let exp = lexpr::from_str(
@@ -746,6 +830,10 @@ mod tests {
         let exp =
             lexpr::from_str("(and ((lambda ((x : int)) : bool (< x 3)) 5) ((lambda ((x : bool)) : bool (and x true)) false))").unwrap();
         assert_eq!(type_check(&exp).unwrap(), Type::Bool);
+
+        // using set! after variable goes out of scope
+        let exp = lexpr::from_str("(begin (let ((x 3)) (+ x 5)) (set! x 7))").unwrap();
+        assert_eq!(type_check(&exp).is_err(), true);
     }
 
     #[test]
