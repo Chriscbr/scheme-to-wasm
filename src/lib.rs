@@ -1,4 +1,6 @@
-use std::collections::LinkedList;
+use im_rc::{vector, Vector};
+use std::iter::FromIterator;
+use std::vec::Vec;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -6,26 +8,26 @@ pub enum Type {
     Bool,
     Str,
     List(Box<Type>),
-    Func(Vec<Type>, Box<Type>), // array of input types, and a return type
+    Func(Vector<Type>, Box<Type>), // array of input types, and a return type
 }
 
 #[derive(Default)]
 pub struct Env {
-    frames: LinkedList<Vec<(String, Type)>>,
+    frames: Vector<Vector<(String, Type)>>,
 }
 
 impl Env {
     pub fn new() -> Self {
         Env {
-            frames: LinkedList::new(),
+            frames: Vector::new(),
         }
     }
 
-    pub fn push_frame(&mut self, frame: Vec<(String, Type)>) {
+    pub fn push_frame(&mut self, frame: Vector<(String, Type)>) {
         self.frames.push_front(frame)
     }
 
-    pub fn pop_frame(&mut self) -> Option<Vec<(String, Type)>> {
+    pub fn pop_frame(&mut self) -> Option<Vector<(String, Type)>> {
         self.frames.pop_front()
     }
 
@@ -159,7 +161,7 @@ fn tc_let_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, Typ
         Ok(typ) => typ,
         Err(e) => return Err(e),
     };
-    env.push_frame(vec![(String::from(var_name), exp_type)]);
+    env.push_frame(vector![(String::from(var_name), exp_type)]);
     let typ = tc_with_env(body, env);
     env.pop_frame();
     typ
@@ -210,7 +212,10 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeChe
                         Ok(val) => val,
                         Err(e) => return Err(e),
                     };
-                    Ok(Type::Func(input_types_unwrapped, Box::from(return_type)))
+                    Ok(Type::Func(
+                        Vector::from(input_types_unwrapped),
+                        Box::from(return_type),
+                    ))
                 }
                 Some("list") => {
                     if lst_vec.len() != 2 {
@@ -238,7 +243,7 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeChe
 // example
 // input: lexpr::from_str("([x : int] [y : bool])")
 // output: vec![(String::from("x"), Type::Int), (String::from("y"), Type::Bool)]
-fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vec<(String, Type)>, TypeCheckError> {
+fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, TypeCheckError> {
     let arg_list = match args.to_vec() {
         Some(vec) => vec,
         None => {
@@ -333,7 +338,7 @@ fn tc_lambda_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, 
     // remove local variables from environment since body has been type checked
     env.pop_frame();
 
-    let arg_types: Vec<Type> = args.iter().map(|pair| pair.1.clone()).collect();
+    let arg_types: Vector<Type> = args.iter().map(|pair| pair.1.clone()).collect();
     Ok(Type::Func(arg_types, Box::from(ret_type)))
 }
 
@@ -344,8 +349,11 @@ fn check_type_arrays_equal(arr1: &[Type], arr2: &[Type]) -> bool {
     arr1.iter().zip(arr2.iter()).all(|(typ1, typ2)| match typ1 {
         Type::Func(arg_types1, ret_type_boxed1) => match typ2 {
             Type::Func(arg_types2, ret_type_boxed2) => {
-                check_type_arrays_equal(arg_types1, arg_types2)
-                    && (*ret_type_boxed1 == *ret_type_boxed2)
+                check_type_arrays_equal(
+                    // is there any easier way to convert im::vector::Vector<Type> into &[Type]?
+                    Vec::from_iter(arg_types1.iter().cloned()).as_slice(),
+                    Vec::from_iter(arg_types2.iter().cloned()).as_slice(),
+                ) && (*ret_type_boxed1 == *ret_type_boxed2)
             }
             _ => false,
         },
@@ -360,7 +368,10 @@ fn check_lambda_type_with_inputs(
     match fn_type {
         Type::Func(arg_types, ret_type_boxed) => {
             let ret_type = ret_type_boxed.as_ref();
-            if check_type_arrays_equal(&arg_types, &param_types) {
+            if check_type_arrays_equal(
+                Vec::from_iter(arg_types.iter().cloned()).as_slice(),
+                &param_types,
+            ) {
                 Ok((*ret_type).clone())
             } else {
                 Err(TypeCheckError::from(
@@ -642,27 +653,27 @@ mod tests {
         let exp = lexpr::from_str("(-> int)").unwrap();
         assert_eq!(
             convert_annotation_to_type(&exp).unwrap(),
-            Type::Func(vec![], Box::from(Type::Int))
+            Type::Func(vector![], Box::from(Type::Int))
         );
 
         let exp = lexpr::from_str("(-> int int)").unwrap();
         assert_eq!(
             convert_annotation_to_type(&exp).unwrap(),
-            Type::Func(vec![Type::Int], Box::from(Type::Int))
+            Type::Func(vector![Type::Int], Box::from(Type::Int))
         );
 
         let exp = lexpr::from_str("(-> string int bool)").unwrap();
         assert_eq!(
             convert_annotation_to_type(&exp).unwrap(),
-            Type::Func(vec![Type::Str, Type::Int], Box::from(Type::Bool))
+            Type::Func(vector![Type::Str, Type::Int], Box::from(Type::Bool))
         );
 
         let exp = lexpr::from_str("(-> (-> int int bool) int int bool)").unwrap();
         assert_eq!(
             convert_annotation_to_type(&exp).unwrap(),
             Type::Func(
-                vec![
-                    Type::Func(vec![Type::Int, Type::Int], Box::from(Type::Bool)),
+                vector![
+                    Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Bool)),
                     Type::Int,
                     Type::Int
                 ],
@@ -677,16 +688,16 @@ mod tests {
         let types2 = vec![Type::Int, Type::Bool, Type::Str];
         assert_eq!(check_type_arrays_equal(&types1, &types2), true);
 
-        let types1 = vec![Type::Func(vec![], Box::from(Type::Int))];
-        let types2 = vec![Type::Func(vec![], Box::from(Type::Int))];
+        let types1 = vec![Type::Func(vector![], Box::from(Type::Int))];
+        let types2 = vec![Type::Func(vector![], Box::from(Type::Int))];
         assert_eq!(check_type_arrays_equal(&types1, &types2), true);
 
         let types1 = vec![Type::Func(
-            vec![Type::Int, Type::Int],
+            vector![Type::Int, Type::Int],
             Box::from(Type::Bool),
         )];
         let types2 = vec![Type::Func(
-            vec![Type::Int, Type::Int],
+            vector![Type::Int, Type::Int],
             Box::from(Type::Bool),
         )];
         assert_eq!(check_type_arrays_equal(&types1, &types2), true);
@@ -711,19 +722,22 @@ mod tests {
 
         // return types differ
         let types1 = vec![Type::Func(
-            vec![Type::Int, Type::Int],
+            vector![Type::Int, Type::Int],
             Box::from(Type::Bool),
         )];
-        let types2 = vec![Type::Func(vec![Type::Int, Type::Int], Box::from(Type::Str))];
+        let types2 = vec![Type::Func(
+            vector![Type::Int, Type::Int],
+            Box::from(Type::Str),
+        )];
         assert_eq!(check_type_arrays_equal(&types1, &types2), false);
 
         // input types differ
         let types1 = vec![Type::Func(
-            vec![Type::Int, Type::Int],
+            vector![Type::Int, Type::Int],
             Box::from(Type::Bool),
         )];
         let types2 = vec![Type::Func(
-            vec![Type::Int, Type::Str],
+            vector![Type::Int, Type::Str],
             Box::from(Type::Bool),
         )];
         assert_eq!(check_type_arrays_equal(&types1, &types2), false);

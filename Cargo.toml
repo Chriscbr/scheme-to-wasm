@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 lexpr = "0.2.3"
+im-rc = "13.0.0"

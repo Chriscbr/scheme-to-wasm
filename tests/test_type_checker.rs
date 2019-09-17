@@ -1,3 +1,4 @@
+use im_rc::vector;
 use scheme_to_rust::{tc_with_env, type_check, Env, Type};
 
 #[test]
@@ -247,19 +248,19 @@ fn test_typecheck_lambda_happy() {
     let exp = lexpr::from_str("(lambda () : int 3)").unwrap();
     assert_eq!(
         type_check(&exp).unwrap(),
-        Type::Func(vec![], Box::from(Type::Int))
+        Type::Func(vector![], Box::from(Type::Int))
     );
 
     let exp = lexpr::from_str("(lambda ((x : int)) : bool (< x 5))").unwrap();
     assert_eq!(
         type_check(&exp).unwrap(),
-        Type::Func(vec![Type::Int], Box::from(Type::Bool))
+        Type::Func(vector![Type::Int], Box::from(Type::Bool))
     );
 
     let exp = lexpr::from_str("(lambda ((x : int) (y : int)) : int (* x y))").unwrap();
     assert_eq!(
         type_check(&exp).unwrap(),
-        Type::Func(vec![Type::Int, Type::Int], Box::from(Type::Int))
+        Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Int))
     );
 
     let exp =
@@ -268,8 +269,8 @@ fn test_typecheck_lambda_happy() {
     assert_eq!(
         type_check(&exp).unwrap(),
         Type::Func(
-            vec![
-                Type::Func(vec![Type::Int, Type::Int], Box::from(Type::Bool)),
+            vector![
+                Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Bool)),
                 Type::Int,
                 Type::Int
             ],
@@ -321,14 +322,14 @@ fn test_type_check_apply_hof_happy() {
     )
     .unwrap();
     let map_type = Type::Func(
-        vec![
-            Type::Func(vec![Type::Int], Box::from(Type::Int)),
+        vector![
+            Type::Func(vector![Type::Int], Box::from(Type::Int)),
             Type::List(Box::from(Type::Int)),
         ],
         Box::from(Type::List(Box::from(Type::Int))),
     ); // (-> (-> int int) (list int) (list int))
     let mut env = Env::new();
-    env.push_frame(vec![(String::from("map"), map_type.clone())]);
+    env.push_frame(vector![(String::from("map"), map_type.clone())]);
     assert_eq!(tc_with_env(&exp, &mut env).unwrap(), map_type);
 }
 
