@@ -1,6 +1,7 @@
 use crate::Type;
 use im_rc::Vector;
 
+#[derive(Clone)]
 pub enum Operator {
     Add,
     Subtract,
@@ -16,11 +17,12 @@ pub enum Operator {
     Concat,
 }
 
+#[derive(Clone)]
 pub enum Expr {
-    Binop(Operator, Box<Expr>, Box<Expr>), // operator, arg1, arg2
-    If(Box<Expr>, Box<Expr>, Box<Expr>),   // pred, consequent, alternate
-    Let(Vector<(Expr, Expr)>, Box<Expr>),  // variable bindings, body
-    Lambda(Vector<(Expr, Type)>, Type, Box<Expr>), // arg names/types, return type, body
+    Binop(Operator, Box<Expr>, Box<Expr>),  // operator, arg1, arg2
+    If(Box<Expr>, Box<Expr>, Box<Expr>),    // pred, consequent, alternate
+    Let(Vector<(String, Expr)>, Box<Expr>), // variable bindings, body
+    Lambda(Vector<(String, Type)>, Type, Box<Expr>), // arg names/types, return type, body
     Begin(Vector<Expr>),
     Set(Box<Expr>, Box<Expr>),
     Cons(Box<Expr>),
@@ -59,8 +61,7 @@ impl std::error::Error for ParseError {
     }
 }
 
-// TODO: write unit tests
-pub fn parse_binop(op: &str, arg1: &lexpr::Value, arg2: &lexpr::Value) -> Result<Expr, ParseError> {
+fn parse_binop(op: &str, arg1: &lexpr::Value, arg2: &lexpr::Value) -> Result<Expr, ParseError> {
     let exp1 = match parse(arg1) {
         Ok(val) => Box::from(val),
         Err(e) => return Err(e),
@@ -87,7 +88,44 @@ pub fn parse_binop(op: &str, arg1: &lexpr::Value, arg2: &lexpr::Value) -> Result
     Ok(Expr::Binop(operator, exp1, exp2))
 }
 
-// TODO: write unit tests
+fn parse_let(bindings: &lexpr::Value, body: &lexpr::Value) -> Result<Expr, ParseError> {
+    // Assert that the bindings is a proper list
+    let bindings = match bindings.to_vec() {
+        Some(vec) => vec,
+        None => {
+            return Err(ParseError::from(
+                "Let expression bindings are not in a proper list.",
+            ))
+        }
+    };
+
+    let parsed_bindings: Result<Vector<(String, Expr)>, ParseError> = Vector::from(bindings)
+        .iter()
+        .map(|binding| {
+            let binding_vec = match binding.to_vec() {
+                Some(vec) => vec,
+                None => return Err(ParseError::from("Let binding is not a valid list.")),
+            };
+            if binding_vec.len() != 2 {
+                return Err(ParseError::from(
+                    "Let binding is missing values or contains extra values.",
+                ));
+            }
+
+            binding_vec[0]
+                .as_symbol()
+                .ok_or_else(|| ParseError::from("Let binding does not have a valid name."))
+                .and_then(|binding_name| {
+                    parse(&binding_vec[1])
+                        .and_then(|binding_val| Ok((String::from(binding_name), binding_val)))
+                })
+        })
+        .collect();
+    parsed_bindings.and_then(|bindings_vec| {
+        parse(body).and_then(|body_expr| Ok(Expr::Let(bindings_vec, Box::from(body_expr))))
+    })
+}
+
 pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
     match value {
         lexpr::Value::Number(x) => match x.as_i64() {
@@ -141,8 +179,17 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                                 "If expression has incorrect number of arguments.",
                             ))
                         }
-                    } // TODO: implement
-                    // "let" =>
+                    }
+                    "let" => {
+                        if rest.len() == 2 {
+                            parse_let(&rest[0], &rest[1])
+                        } else {
+                            Err(ParseError::from(
+                                "Let expression has incorrect number of arguments.",
+                            ))
+                        }
+                    }
+                    // TODO: implement
                     // "lambda" =>
                     // "begin" =>
                     // "set!" =>
