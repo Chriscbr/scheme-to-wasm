@@ -1,6 +1,7 @@
 use im_rc::{vector, Vector};
 use std::iter::FromIterator;
-use std::vec::Vec;
+
+mod parser;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
