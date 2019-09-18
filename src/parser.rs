@@ -1,8 +1,8 @@
 use crate::Type;
-use im_rc::Vector;
+use im_rc::{vector, Vector};
 
-#[derive(Clone)]
-pub enum Operator {
+#[derive(Clone, Debug)]
+pub enum Op {
     Add,
     Subtract,
     Multiply,
@@ -17,9 +17,9 @@ pub enum Operator {
     Concat,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Expr {
-    Binop(Operator, Box<Expr>, Box<Expr>),  // operator, arg1, arg2
+    Binop(Op, Box<Expr>, Box<Expr>),        // operator, arg1, arg2
     If(Box<Expr>, Box<Expr>, Box<Expr>),    // pred, consequent, alternate
     Let(Vector<(String, Expr)>, Box<Expr>), // variable bindings, body
     Lambda(Vector<(String, Type)>, Type, Box<Expr>), // arg names/types, return type, body
@@ -61,6 +61,142 @@ impl std::error::Error for ParseError {
     }
 }
 
+//
+// Helper functions
+//
+
+fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
+    match annotation {
+        lexpr::Value::Symbol(val) => match val.as_ref() {
+            "int" => Ok(Type::Int),
+            "bool" => Ok(Type::Bool),
+            "string" => Ok(Type::Str),
+            _ => Err(ParseError::from(
+                "Type annotation not recognized as a valid type.",
+            )),
+        },
+        lexpr::Value::Cons(_) => {
+            // an array, ex. [Symbol(->), Symbol(int), Symbol(int), Symbol(bool)]
+            let lst_vec = match annotation.to_vec() {
+                Some(vec) => vec,
+                None => {
+                    return Err(ParseError::from(
+                        "Type annotation for function is not a valid list.",
+                    ))
+                }
+            };
+            // ensure that the function annotation has at least -> and a return type as elements
+            if lst_vec.is_empty() {
+                return Err(ParseError::from("Type annotation is missing values."));
+            }
+            match lst_vec[0].as_symbol() {
+                Some("->") => {
+                    if lst_vec.len() < 2 {
+                        return Err(ParseError::from(
+                            "Type annotation for function is missing values.",
+                        ));
+                    }
+                    let input_types: Result<Vec<Type>, ParseError> = lst_vec
+                        [1..(lst_vec.len() - 1)]
+                        .iter()
+                        .map(|val| convert_annotation_to_type(val))
+                        .collect();
+                    let input_types_unwrapped = match input_types {
+                        Ok(val) => val,
+                        Err(e) => return Err(e),
+                    };
+                    let return_type = match convert_annotation_to_type(&lst_vec[lst_vec.len() - 1])
+                    {
+                        Ok(val) => val,
+                        Err(e) => return Err(e),
+                    };
+                    Ok(Type::Func(
+                        Vector::from(input_types_unwrapped),
+                        Box::from(return_type),
+                    ))
+                }
+                Some("list") => {
+                    if lst_vec.len() != 2 {
+                        return Err(ParseError::from(
+                            "Type annotation for list has incorrect number of values.",
+                        ));
+                    }
+                    let lst_type = match convert_annotation_to_type(&lst_vec[1]) {
+                        Ok(typ) => typ,
+                        Err(e) => return Err(e),
+                    };
+                    Ok(Type::List(Box::from(lst_type)))
+                }
+                _ => Err(ParseError::from(
+                    r#"Type annotation for function does not have "->" or "list" as first symbol."#,
+                )),
+            }
+        }
+        _ => Err(ParseError::from(
+            "Type annotation is invalid or is missing.",
+        )),
+    }
+}
+
+fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, ParseError> {
+    let arg_list = match args.to_vec() {
+        Some(vec) => vec,
+        None => {
+            return Err(ParseError::from(
+                "Lambda arguments are not in a valid list.",
+            ))
+        }
+    };
+    arg_list
+        .iter()
+        .map(|arg| {
+            // [x : int] as a vec
+            let arg_vec = match arg.to_vec() {
+                Some(vec) => vec,
+                None => return Err(ParseError::from("Lambda argument is not a valid list.")),
+            };
+            if arg_vec.len() != 3 {
+                return Err(ParseError::from(
+                    "Lambda argument is missing values or contains extra values.",
+                ));
+            }
+
+            // check there is a separator
+            let separator = match arg_vec[1].as_symbol() {
+                Some(val) => val,
+                None => {
+                    return Err(ParseError::from(
+                        "Lambda argument does not contain the correct : separator.",
+                    ))
+                }
+            };
+            if separator != ":" {
+                return Err(ParseError::from(
+                    "Lambda argument does not contain the correct : separator.",
+                ));
+            }
+
+            let arg_name = match arg_vec[0].as_symbol() {
+                Some(val) => val,
+                None => {
+                    return Err(ParseError::from(
+                        "Lambda argument does not have a valid name.",
+                    ))
+                }
+            };
+            let arg_type = match convert_annotation_to_type(&arg_vec[2]) {
+                Ok(typ) => typ,
+                Err(e) => return Err(e),
+            };
+            Ok((String::from(arg_name), arg_type))
+        })
+        .collect()
+}
+
+//
+// Parsing functions
+//
+
 fn parse_binop(op: &str, arg1: &lexpr::Value, arg2: &lexpr::Value) -> Result<Expr, ParseError> {
     let exp1 = match parse(arg1) {
         Ok(val) => Box::from(val),
@@ -71,26 +207,51 @@ fn parse_binop(op: &str, arg1: &lexpr::Value, arg2: &lexpr::Value) -> Result<Exp
         Err(e) => return Err(e),
     };
     let operator = match op {
-        "and" => Operator::And,
-        "or" => Operator::Or,
-        "+" => Operator::Add,
-        "-" => Operator::Subtract,
-        "*" => Operator::Multiply,
-        "/" => Operator::Divide,
-        "<" => Operator::LessThan,
-        ">" => Operator::GreaterThan,
-        "<=" => Operator::LessOrEqual,
-        ">=" => Operator::GreaterOrEqual,
-        "=" => Operator::EqualTo,
-        "concat" => Operator::Concat,
+        "and" => Op::And,
+        "or" => Op::Or,
+        "+" => Op::Add,
+        "-" => Op::Subtract,
+        "*" => Op::Multiply,
+        "/" => Op::Divide,
+        "<" => Op::LessThan,
+        ">" => Op::GreaterThan,
+        "<=" => Op::LessOrEqual,
+        ">=" => Op::GreaterOrEqual,
+        "=" => Op::EqualTo,
+        "concat" => Op::Concat,
         _ => return Err(ParseError::from("Unrecognized binary operator.")),
     };
     Ok(Expr::Binop(operator, exp1, exp2))
 }
 
-fn parse_let(bindings: &lexpr::Value, body: &lexpr::Value) -> Result<Expr, ParseError> {
+fn parse_if(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 3 {
+        parse(&rest[0]).and_then(|predicate| {
+            parse(&rest[1]).and_then(|consequent| {
+                parse(&rest[2]).and_then(|alternate| {
+                    Ok(Expr::If(
+                        Box::from(predicate),
+                        Box::from(consequent),
+                        Box::from(alternate),
+                    ))
+                })
+            })
+        })
+    } else {
+        Err(ParseError::from(
+            "If expression has incorrect number of arguments.",
+        ))
+    }
+}
+
+fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() != 2 {
+        return Err(ParseError::from(
+            "Let expression has incorrect number of arguments.",
+        ));
+    }
     // Assert that the bindings is a proper list
-    let bindings = match bindings.to_vec() {
+    let bindings = match rest[0].to_vec() {
         Some(vec) => vec,
         None => {
             return Err(ParseError::from(
@@ -122,8 +283,41 @@ fn parse_let(bindings: &lexpr::Value, body: &lexpr::Value) -> Result<Expr, Parse
         })
         .collect();
     parsed_bindings.and_then(|bindings_vec| {
-        parse(body).and_then(|body_expr| Ok(Expr::Let(bindings_vec, Box::from(body_expr))))
+        parse(&rest[1]).and_then(|body_expr| Ok(Expr::Let(bindings_vec, Box::from(body_expr))))
     })
+}
+
+fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() != 4 {
+        return Err(ParseError::from(
+            "Lambda expression has incorrect number of arguments. Perhaps you are missing the return type?",
+        ));
+    }
+    let args = match unwrap_lambda_args(&rest[0]) {
+        Ok(val) => val,
+        Err(e) => return Err(e),
+    };
+
+    // check there is a separator
+    let separator = match rest[1].as_symbol() {
+        Some(val) => val,
+        None => return Err(ParseError::from("Lambda expression does not have a separator between the arguments list and return type.")),
+    };
+    if separator != ":" {
+        return Err(ParseError::from("Lambda expression does not have the correct separator : between the arguments list and return type."));
+    }
+
+    // get the (annotated) return type
+    let ret_type = match convert_annotation_to_type(&rest[2]) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    let body = match parse(&rest[3]) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+
+    Ok(Expr::Lambda(args, ret_type, Box::from(body)))
 }
 
 pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
@@ -161,36 +355,10 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                             ))
                         }
                     }
-                    "if" => {
-                        if rest.len() == 3 {
-                            parse(&rest[0]).and_then(|predicate| {
-                                parse(&rest[1]).and_then(|consequent| {
-                                    parse(&rest[2]).and_then(|alternate| {
-                                        Ok(Expr::If(
-                                            Box::from(predicate),
-                                            Box::from(consequent),
-                                            Box::from(alternate),
-                                        ))
-                                    })
-                                })
-                            })
-                        } else {
-                            Err(ParseError::from(
-                                "If expression has incorrect number of arguments.",
-                            ))
-                        }
-                    }
-                    "let" => {
-                        if rest.len() == 2 {
-                            parse_let(&rest[0], &rest[1])
-                        } else {
-                            Err(ParseError::from(
-                                "Let expression has incorrect number of arguments.",
-                            ))
-                        }
-                    }
+                    "if" => parse_if(&rest),
+                    "let" => parse_let(&rest),
+                    "lambda" => parse_lambda(&rest),
                     // TODO: implement
-                    // "lambda" =>
                     // "begin" =>
                     // "set!" =>
                     // "cons" =>
@@ -211,5 +379,65 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
             symbol => Ok(Expr::Symbol(symbol.to_string())),
         },
         _ => Err(ParseError::from("Unrecognized form of expression found.")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_annotations() {
+        let exp = lexpr::from_str("int").unwrap();
+        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Int);
+
+        let exp = lexpr::from_str("bool").unwrap();
+        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Bool);
+
+        let exp = lexpr::from_str("string").unwrap();
+        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Str);
+
+        let exp = lexpr::from_str("(list int)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::List(Box::from(Type::Int))
+        );
+
+        let exp = lexpr::from_str("(list (list int))").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::List(Box::from(Type::List(Box::from(Type::Int))))
+        );
+
+        let exp = lexpr::from_str("(-> int)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::Func(vector![], Box::from(Type::Int))
+        );
+
+        let exp = lexpr::from_str("(-> int int)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::Func(vector![Type::Int], Box::from(Type::Int))
+        );
+
+        let exp = lexpr::from_str("(-> string int bool)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::Func(vector![Type::Str, Type::Int], Box::from(Type::Bool))
+        );
+
+        let exp = lexpr::from_str("(-> (-> int int bool) int int bool)").unwrap();
+        assert_eq!(
+            convert_annotation_to_type(&exp).unwrap(),
+            Type::Func(
+                vector![
+                    Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Bool)),
+                    Type::Int,
+                    Type::Int
+                ],
+                Box::from(Type::Bool)
+            )
+        );
     }
 }

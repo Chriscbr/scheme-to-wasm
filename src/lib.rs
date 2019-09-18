@@ -630,61 +630,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_convert_annotations() {
-        let exp = lexpr::from_str("int").unwrap();
-        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Int);
-
-        let exp = lexpr::from_str("bool").unwrap();
-        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Bool);
-
-        let exp = lexpr::from_str("string").unwrap();
-        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Str);
-
-        let exp = lexpr::from_str("(list int)").unwrap();
-        assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
-            Type::List(Box::from(Type::Int))
-        );
-
-        let exp = lexpr::from_str("(list (list int))").unwrap();
-        assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
-            Type::List(Box::from(Type::List(Box::from(Type::Int))))
-        );
-
-        let exp = lexpr::from_str("(-> int)").unwrap();
-        assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
-            Type::Func(vector![], Box::from(Type::Int))
-        );
-
-        let exp = lexpr::from_str("(-> int int)").unwrap();
-        assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
-            Type::Func(vector![Type::Int], Box::from(Type::Int))
-        );
-
-        let exp = lexpr::from_str("(-> string int bool)").unwrap();
-        assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
-            Type::Func(vector![Type::Str, Type::Int], Box::from(Type::Bool))
-        );
-
-        let exp = lexpr::from_str("(-> (-> int int bool) int int bool)").unwrap();
-        assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
-            Type::Func(
-                vector![
-                    Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Bool)),
-                    Type::Int,
-                    Type::Int
-                ],
-                Box::from(Type::Bool)
-            )
-        );
-    }
-
-    #[test]
     fn test_check_type_arrays_equal_happy() {
         let types1 = vec![Type::Int, Type::Bool, Type::Str];
         let types2 = vec![Type::Int, Type::Bool, Type::Str];
