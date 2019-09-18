@@ -329,7 +329,7 @@ fn test_type_check_apply_hof_happy() {
         Box::from(Type::List(Box::from(Type::Int))),
     ); // (-> (-> int int) (list int) (list int))
     let mut env = Env::new();
-    env.push_frame(vector![(String::from("map"), map_type.clone())]);
+    env = env.add_binding((String::from("map"), map_type.clone()));
     assert_eq!(tc_with_env(&exp, &mut env).unwrap(), map_type);
 }
 

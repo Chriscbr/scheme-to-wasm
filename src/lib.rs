@@ -14,30 +14,36 @@ pub enum Type {
 
 #[derive(Default)]
 pub struct Env {
-    frames: Vector<Vector<(String, Type)>>,
+    bindings: Vector<(String, Type)>,
 }
 
+// New values are appended to the front of the frame
 impl Env {
     pub fn new() -> Self {
         Env {
-            frames: Vector::new(),
+            bindings: Vector::new(),
         }
     }
 
-    pub fn push_frame(&mut self, frame: Vector<(String, Type)>) {
-        self.frames.push_front(frame)
+    /// Returns a new environment extended with the provided binding.
+    pub fn add_binding(&mut self, new_binding: (String, Type)) -> Env {
+        let mut bindings = self.bindings.clone();
+        bindings.push_front(new_binding);
+        Env { bindings }
     }
 
-    pub fn pop_frame(&mut self) -> Option<Vector<(String, Type)>> {
-        self.frames.pop_front()
+    pub fn add_bindings(&mut self, new_bindings: &[(String, Type)]) -> Env {
+        let mut bindings = self.bindings.clone();
+        for binding in new_bindings {
+            bindings.push_front(binding.clone());
+        }
+        Env { bindings }
     }
 
     pub fn find(&mut self, key: &str) -> Option<&Type> {
-        for vec in self.frames.iter() {
-            for pair in vec.iter() {
-                if pair.0 == key {
-                    return Some(&pair.1);
-                }
+        for pair in self.bindings.iter() {
+            if pair.0 == key {
+                return Some(&pair.1);
             }
         }
         None
@@ -162,10 +168,8 @@ fn tc_let_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, Typ
         Ok(typ) => typ,
         Err(e) => return Err(e),
     };
-    env.push_frame(vector![(String::from(var_name), exp_type)]);
-    let typ = tc_with_env(body, env);
-    env.pop_frame();
-    typ
+    let mut new_env = env.add_binding((String::from(var_name), exp_type));
+    tc_with_env(body, &mut new_env)
 }
 
 fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, TypeCheckError> {
@@ -309,7 +313,7 @@ fn tc_lambda_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, 
     };
 
     // add arg types to the type environment for use in the body
-    env.push_frame(args.clone());
+    let mut new_env = env.add_bindings(Vec::from_iter(args.iter().cloned()).as_slice());
 
     // check there is a separator
     let separator = match rest_exp[1].as_symbol() {
@@ -326,7 +330,7 @@ fn tc_lambda_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, 
         Err(e) => return Err(e),
     };
     // type check lambda body
-    let body_type = match tc_with_env(&rest_exp[3], env) {
+    let body_type = match tc_with_env(&rest_exp[3], &mut new_env) {
         Ok(typ) => typ,
         Err(e) => return Err(e),
     };
@@ -335,9 +339,6 @@ fn tc_lambda_with_env(rest_exp: &[lexpr::Value], env: &mut Env) -> Result<Type, 
             "Lambda expression body type does not match the expected return type.",
         ));
     }
-
-    // remove local variables from environment since body has been type checked
-    env.pop_frame();
 
     let arg_types: Vector<Type> = args.iter().map(|pair| pair.1.clone()).collect();
     Ok(Type::Func(arg_types, Box::from(ret_type)))
