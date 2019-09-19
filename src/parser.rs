@@ -1,4 +1,4 @@
-use crate::Type;
+use crate::type_checker::Type;
 use im_rc::{vector, Vector};
 
 type Symbol = String;

@@ -1,5 +1,5 @@
 use im_rc::vector;
-use scheme_to_rust::{tc_with_env, type_check, Env, Type};
+use scheme_to_rust::type_checker::{tc_with_env, type_check, Env, Type};
 
 #[test]
 fn test_typecheck_prims() {
