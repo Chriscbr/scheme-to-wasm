@@ -1,8 +1,17 @@
 use crate::Type;
 use im_rc::{vector, Vector};
 
+type Symbol = String;
+
 #[derive(Clone, Debug)]
-pub enum Op {
+pub enum UnaryOp {
+    Car,
+    Cdr,
+    IsNull,
+}
+
+#[derive(Clone, Debug)]
+pub enum BinOp {
     Add,
     Subtract,
     Multiply,
@@ -15,25 +24,23 @@ pub enum Op {
     And,
     Or,
     Concat,
+    Cons,
 }
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Binop(Op, Box<Expr>, Box<Expr>),        // operator, arg1, arg2
+    Binop(BinOp, Box<Expr>, Box<Expr>),     // operator, arg1, arg2
+    Unop(UnaryOp, Box<Expr>),               // operator, arg1
     If(Box<Expr>, Box<Expr>, Box<Expr>),    // pred, consequent, alternate
-    Let(Vector<(String, Expr)>, Box<Expr>), // variable bindings, body
-    Lambda(Vector<(String, Type)>, Type, Box<Expr>), // arg names/types, return type, body
+    Let(Vector<(Symbol, Expr)>, Box<Expr>), // variable bindings, body
+    Lambda(Vector<(Symbol, Type)>, Type, Box<Expr>), // arg names/types, return type, body
     Begin(Vector<Expr>),
-    Set(Box<Expr>, Box<Expr>),
-    Cons(Box<Expr>),
-    Car(Box<Expr>),
-    Cdr(Box<Expr>),
-    IsNull(Box<Expr>),
+    Set(Symbol, Box<Expr>),
     Null(Type),
     FnApp(Box<Expr>, Vector<Expr>), // func, arguments
-    Symbol(String),
-    Number(i64),
-    Boolean(bool),
+    Sym(Symbol),
+    Num(i64),
+    Bool(bool),
     Str(String),
 }
 
@@ -138,7 +145,7 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseEr
     }
 }
 
-fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, ParseError> {
+fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(Symbol, Type)>, ParseError> {
     let arg_list = match args.to_vec() {
         Some(vec) => vec,
         None => {
@@ -197,31 +204,60 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, Par
 // Parsing functions
 //
 
-fn parse_binop(op: &str, arg1: &lexpr::Value, arg2: &lexpr::Value) -> Result<Expr, ParseError> {
-    let exp1 = match parse(arg1) {
+fn parse_array(exps: &[lexpr::Value]) -> Result<Vector<Expr>, ParseError> {
+    exps.iter().map(|exp| parse(exp)).collect()
+}
+
+fn parse_binop(op: &str, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() != 2 {
+        return Err(ParseError::from(
+            "Binary operator has incorrect number of sub-expressions.",
+        ));
+    }
+    let exp1 = match parse(&rest[0]) {
         Ok(val) => Box::from(val),
         Err(e) => return Err(e),
     };
-    let exp2 = match parse(arg2) {
+    let exp2 = match parse(&rest[1]) {
         Ok(val) => Box::from(val),
         Err(e) => return Err(e),
     };
     let operator = match op {
-        "and" => Op::And,
-        "or" => Op::Or,
-        "+" => Op::Add,
-        "-" => Op::Subtract,
-        "*" => Op::Multiply,
-        "/" => Op::Divide,
-        "<" => Op::LessThan,
-        ">" => Op::GreaterThan,
-        "<=" => Op::LessOrEqual,
-        ">=" => Op::GreaterOrEqual,
-        "=" => Op::EqualTo,
-        "concat" => Op::Concat,
+        "and" => BinOp::And,
+        "or" => BinOp::Or,
+        "+" => BinOp::Add,
+        "-" => BinOp::Subtract,
+        "*" => BinOp::Multiply,
+        "/" => BinOp::Divide,
+        "<" => BinOp::LessThan,
+        ">" => BinOp::GreaterThan,
+        "<=" => BinOp::LessOrEqual,
+        ">=" => BinOp::GreaterOrEqual,
+        "=" => BinOp::EqualTo,
+        "concat" => BinOp::Concat,
+        "cons" => BinOp::Cons,
         _ => return Err(ParseError::from("Unrecognized binary operator.")),
     };
     Ok(Expr::Binop(operator, exp1, exp2))
+}
+
+fn parse_unop(op: &str, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() != 2 {
+        return Err(ParseError::from(
+            "Unary operation has incorrect number of arguments.",
+        ));
+    }
+    let exp = match parse(&rest[0]) {
+        Ok(val) => val,
+        Err(e) => return Err(e),
+    };
+    let operator = match op {
+        "car" => UnaryOp::Car,
+        "cdr" => UnaryOp::Cdr,
+        "null?" => UnaryOp::IsNull,
+        _ => return Err(ParseError::from("Unrecognized unary operator.")),
+    };
+    Ok(Expr::Unop(operator, Box::from(exp)))
 }
 
 fn parse_if(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -260,7 +296,7 @@ fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         }
     };
 
-    let parsed_bindings: Result<Vector<(String, Expr)>, ParseError> = Vector::from(bindings)
+    let parsed_bindings: Result<Vector<(Symbol, Expr)>, ParseError> = Vector::from(bindings)
         .iter()
         .map(|binding| {
             let binding_vec = match binding.to_vec() {
@@ -320,15 +356,68 @@ fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     Ok(Expr::Lambda(args, ret_type, Box::from(body)))
 }
 
+fn parse_begin(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if !rest.is_empty() {
+        match parse_array(&rest) {
+            Ok(exps) => Ok(Expr::Begin(exps)),
+            Err(e) => Err(e),
+        }
+    } else {
+        Err(ParseError::from("Begin expression has no arguments."))
+    }
+}
+
+fn parse_set_bang(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 2 {
+        rest[0]
+            .as_symbol()
+            .ok_or_else(|| {
+                ParseError::from("Set expression does not have a symbol as its first argument.")
+            })
+            .and_then(|var| {
+                parse(&rest[1]).and_then(|expr| Ok(Expr::Set(String::from(var), Box::from(expr))))
+            })
+    } else {
+        Err(ParseError::from(
+            "Set expression has incorrect number of arguments.",
+        ))
+    }
+}
+
+fn parse_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 1 {
+        match convert_annotation_to_type(&rest[0]) {
+            Ok(typ) => Ok(Expr::Null(typ)),
+            Err(e) => Err(e),
+        }
+    } else {
+        Err(ParseError::from(
+            "Null expression has incorrect number of arguments.",
+        ))
+    }
+}
+
+fn parse_func(first: &lexpr::Value, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    let func = match parse(first) {
+        Ok(exp) => exp,
+        Err(e) => return Err(e),
+    };
+    let args = match parse_array(rest) {
+        Ok(exps) => exps,
+        Err(e) => return Err(e),
+    };
+    Ok(Expr::FnApp(Box::from(func), args))
+}
+
 pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
     match value {
         lexpr::Value::Number(x) => match x.as_i64() {
-            Some(val) => Ok(Expr::Number(val)),
+            Some(val) => Ok(Expr::Num(val)),
             None => Err(ParseError::from(
                 "Invalid number found (must be a 64-bit integer).",
             )),
         },
-        lexpr::Value::Bool(x) => Ok(Expr::Boolean(*x)),
+        lexpr::Value::Bool(x) => Ok(Expr::Bool(*x)),
         lexpr::Value::String(x) => Ok(Expr::Str((*x).to_string())),
         lexpr::Value::Cons(_) => {
             let lst = match value.to_vec() {
@@ -346,37 +435,23 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
             match first.as_symbol() {
                 Some(val) => match val {
                     "and" | "or" | "+" | "*" | "-" | "/" | ">" | "<" | ">=" | "<=" | "="
-                    | "concat" => {
-                        if rest.len() == 2 {
-                            parse_binop(val, &rest[0], &rest[1])
-                        } else {
-                            Err(ParseError::from(
-                                "Binary operator has incorrect number of sub-expressions.",
-                            ))
-                        }
-                    }
+                    | "concat" | "cons" => parse_binop(val, &rest),
+                    "car" | "cdr" | "null?" => parse_unop(val, &rest),
                     "if" => parse_if(&rest),
                     "let" => parse_let(&rest),
                     "lambda" => parse_lambda(&rest),
-                    // TODO: implement
-                    // "begin" =>
-                    // "set!" =>
-                    // "cons" =>
-                    // "car" =>
-                    // "cdr" =>
-                    // "null?" =>
-                    // "null" =>
-                    // expr => // function application
-                    _ => Err(ParseError::from("TODO: Unimplemented.")),
+                    "begin" => parse_begin(&rest),
+                    "set!" => parse_set_bang(&rest),
+                    "null" => parse_null(&rest),
+                    _ => parse_func(&first, &rest),
                 },
-                // TODO: change to handle function application case
-                None => Err(ParseError::from("TODO: Unimplemented.")),
+                None => parse_func(&first, &rest),
             }
         }
         lexpr::Value::Symbol(x) => match &x[..] {
-            "true" => Ok(Expr::Boolean(true)),
-            "false" => Ok(Expr::Boolean(false)),
-            symbol => Ok(Expr::Symbol(symbol.to_string())),
+            "true" => Ok(Expr::Bool(true)),
+            "false" => Ok(Expr::Bool(false)),
+            symbol => Ok(Expr::Sym(symbol.to_string())),
         },
         _ => Err(ParseError::from("Unrecognized form of expression found.")),
     }
