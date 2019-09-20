@@ -1,14 +1,7 @@
 use crate::type_checker::Type;
-use im_rc::{vector, Vector};
+use im_rc::Vector;
 
 type Symbol = String;
-
-#[derive(Clone, Debug)]
-pub enum UnaryOp {
-    Car,
-    Cdr,
-    IsNull,
-}
 
 #[derive(Clone, Debug)]
 pub enum BinOp {
@@ -24,18 +17,20 @@ pub enum BinOp {
     And,
     Or,
     Concat,
-    Cons,
 }
 
 #[derive(Clone, Debug)]
 pub enum Expr {
     Binop(BinOp, Box<Expr>, Box<Expr>),     // operator, arg1, arg2
-    Unop(UnaryOp, Box<Expr>),               // operator, arg1
     If(Box<Expr>, Box<Expr>, Box<Expr>),    // pred, consequent, alternate
     Let(Vector<(Symbol, Expr)>, Box<Expr>), // variable bindings, body
     Lambda(Vector<(Symbol, Type)>, Type, Box<Expr>), // arg names/types, return type, body
     Begin(Vector<Expr>),
     Set(Symbol, Box<Expr>),
+    Cons(Box<Expr>, Box<Expr>),
+    Car(Box<Expr>),
+    Cdr(Box<Expr>),
+    IsNull(Box<Expr>),
     Null(Type),
     FnApp(Box<Expr>, Vector<Expr>), // func, arguments
     Sym(Symbol),
@@ -235,29 +230,9 @@ fn parse_binop(op: &str, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ">=" => BinOp::GreaterOrEqual,
         "=" => BinOp::EqualTo,
         "concat" => BinOp::Concat,
-        "cons" => BinOp::Cons,
         _ => return Err(ParseError::from("Unrecognized binary operator.")),
     };
     Ok(Expr::Binop(operator, exp1, exp2))
-}
-
-fn parse_unop(op: &str, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() != 2 {
-        return Err(ParseError::from(
-            "Unary operation has incorrect number of arguments.",
-        ));
-    }
-    let exp = match parse(&rest[0]) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
-    let operator = match op {
-        "car" => UnaryOp::Car,
-        "cdr" => UnaryOp::Cdr,
-        "null?" => UnaryOp::IsNull,
-        _ => return Err(ParseError::from("Unrecognized unary operator.")),
-    };
-    Ok(Expr::Unop(operator, Box::from(exp)))
 }
 
 fn parse_if(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -384,6 +359,51 @@ fn parse_set_bang(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     }
 }
 
+// This is parsed separately from other binary operators since it has a type
+// which is not statically determined, so it would require adding extra
+// complexity to the binary operator type checking function
+fn parse_cons(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 2 {
+        parse(&rest[0]).and_then(|arg1| {
+            parse(&rest[1]).and_then(|arg2| Ok(Expr::Cons(Box::from(arg1), Box::from(arg2))))
+        })
+    } else {
+        Err(ParseError::from(
+            "Cons expression has incorrect number of arguments.",
+        ))
+    }
+}
+
+fn parse_car(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 1 {
+        parse(&rest[0]).and_then(|exp| Ok(Expr::Car(Box::from(exp))))
+    } else {
+        Err(ParseError::from(
+            "Car expression has incorrect number of arguments.",
+        ))
+    }
+}
+
+fn parse_cdr(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 1 {
+        parse(&rest[0]).and_then(|exp| Ok(Expr::Cdr(Box::from(exp))))
+    } else {
+        Err(ParseError::from(
+            "Cdr expression has incorrect number of arguments.",
+        ))
+    }
+}
+
+fn parse_is_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 1 {
+        parse(&rest[0]).and_then(|exp| Ok(Expr::IsNull(Box::from(exp))))
+    } else {
+        Err(ParseError::from(
+            "Null? expression has incorrect number of arguments.",
+        ))
+    }
+}
+
 fn parse_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     if rest.len() == 1 {
         match convert_annotation_to_type(&rest[0]) {
@@ -435,13 +455,16 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
             match first.as_symbol() {
                 Some(val) => match val {
                     "and" | "or" | "+" | "*" | "-" | "/" | ">" | "<" | ">=" | "<=" | "="
-                    | "concat" | "cons" => parse_binop(val, &rest),
-                    "car" | "cdr" | "null?" => parse_unop(val, &rest),
+                    | "concat" => parse_binop(val, &rest),
                     "if" => parse_if(&rest),
                     "let" => parse_let(&rest),
                     "lambda" => parse_lambda(&rest),
                     "begin" => parse_begin(&rest),
                     "set!" => parse_set_bang(&rest),
+                    "cons" => parse_cons(&rest),
+                    "car" => parse_car(&rest),
+                    "cdr" => parse_cdr(&rest),
+                    "null?" => parse_is_null(&rest),
                     "null" => parse_null(&rest),
                     _ => parse_func(&first, &rest),
                 },
@@ -460,6 +483,7 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use im_rc::vector;
 
     #[test]
     fn test_convert_annotations() {
