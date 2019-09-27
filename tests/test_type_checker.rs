@@ -176,12 +176,16 @@ fn test_typecheck_let_happy() {
     let exp = lexpr::from_str("(let ((x 23)) (+ x 24))").unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+    let exp = lexpr::from_str("(let ((x 3) (y 5)) (+ x y))").unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), Type::Int);
 }
 
 #[test]
 fn test_typecheck_let_sad() {
     // one variable missing
-    let exp = lexpr::from_str("(let ([x 23]) (+ x y))").unwrap();
+    let exp = lexpr::from_str("(let ((x 23)) (+ x y))").unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).is_err(), true);
 }
