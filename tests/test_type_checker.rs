@@ -1,6 +1,6 @@
 use im_rc::vector;
-use scheme_to_rust::parser::parse;
-use scheme_to_rust::type_checker::{tc_with_env, type_check, Env, Type};
+use scheme_to_rust::parser::{parse, Type};
+use scheme_to_rust::type_checker::{tc_with_env, type_check, TypeEnv};
 
 #[test]
 fn test_typecheck_prims() {
@@ -379,7 +379,7 @@ fn test_type_check_apply_hof_happy() {
         ],
         Box::from(Type::List(Box::from(Type::Int))),
     ); // (-> (-> int int) (list int) (list int))
-    let mut env = Env::new();
+    let mut env = TypeEnv::new();
     env = env.add_binding((String::from("map"), map_type.clone()));
     assert_eq!(tc_with_env(&exp, &mut env).unwrap(), map_type);
 }

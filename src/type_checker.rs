@@ -1,42 +1,33 @@
-use crate::parser::{BinOp, Expr};
+use crate::parser::{BinOp, Expr, Type};
 use im_rc::Vector;
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Type {
-    Int,
-    Bool,
-    Str,
-    List(Box<Type>),
-    Func(Vector<Type>, Box<Type>), // array of input types, and a return type
-}
-
 #[derive(Default)]
-pub struct Env {
+pub struct TypeEnv {
     bindings: Vector<(String, Type)>,
 }
 
 // New values are appended to the front of the frame
-impl Env {
+impl TypeEnv {
     pub fn new() -> Self {
-        Env {
+        TypeEnv {
             bindings: Vector::new(),
         }
     }
 
     /// Returns a new environment extended with the provided binding.
-    pub fn add_binding(&mut self, new_binding: (String, Type)) -> Env {
+    pub fn add_binding(&mut self, new_binding: (String, Type)) -> TypeEnv {
         let mut bindings = self.bindings.clone();
         bindings.push_front(new_binding);
-        Env { bindings }
+        TypeEnv { bindings }
     }
 
     /// Returns a new environment extended with the provided bindings.
-    pub fn add_bindings(&mut self, new_bindings: Vector<(String, Type)>) -> Env {
+    pub fn add_bindings(&mut self, new_bindings: Vector<(String, Type)>) -> TypeEnv {
         let mut bindings = self.bindings.clone();
         for binding in new_bindings {
             bindings.push_front(binding);
         }
-        Env { bindings }
+        TypeEnv { bindings }
     }
 
     pub fn find(&mut self, key: &str) -> Option<&Type> {
@@ -120,7 +111,7 @@ fn tc_binop_with_env(
     op: &BinOp,
     arg1: &Expr,
     arg2: &Expr,
-    env: &mut Env,
+    env: &mut TypeEnv,
 ) -> Result<Type, TypeCheckError> {
     let arg1_expect_typ: Type;
     let arg2_expect_typ: Type;
@@ -168,7 +159,7 @@ fn tc_if_with_env(
     predicate: &Expr,
     consequent: &Expr,
     alternate: &Expr,
-    env: &mut Env,
+    env: &mut TypeEnv,
 ) -> Result<Type, TypeCheckError> {
     tc_with_env(predicate, env).and_then(|pred| {
         tc_with_env(consequent, env).and_then(|cons| {
@@ -192,7 +183,7 @@ fn tc_if_with_env(
 fn tc_let_with_env(
     bindings: &Vector<(String, Expr)>,
     body: &Expr,
-    env: &mut Env,
+    env: &mut TypeEnv,
 ) -> Result<Type, TypeCheckError> {
     let type_bindings: Result<Vector<(String, Type)>, TypeCheckError> = bindings
         .iter()
@@ -216,7 +207,7 @@ fn tc_lambda_with_env(
     params: &Vector<(String, Type)>,
     ret_typ: &Type,
     body: &Expr,
-    env: &mut Env,
+    env: &mut TypeEnv,
 ) -> Result<Type, TypeCheckError> {
     // add arg types to the type environment for use in the body
     let mut new_env = env.add_bindings(params.clone());
@@ -234,7 +225,7 @@ fn tc_lambda_with_env(
     })
 }
 
-fn tc_begin_with_env(exps: &Vector<Expr>, env: &mut Env) -> Result<Type, TypeCheckError> {
+fn tc_begin_with_env(exps: &Vector<Expr>, env: &mut TypeEnv) -> Result<Type, TypeCheckError> {
     // Note: it's important that even though we only return the type of the
     // last expression within the 'begin' S-expression, we still want to
     // type-check the entire array in case any type errors pop up
@@ -247,7 +238,11 @@ fn tc_begin_with_env(exps: &Vector<Expr>, env: &mut Env) -> Result<Type, TypeChe
 }
 
 // set! returns the value that is being assigned, since the language has no unit type
-fn tc_set_bang_with_env(symbol: &str, exp: &Expr, env: &mut Env) -> Result<Type, TypeCheckError> {
+fn tc_set_bang_with_env(
+    symbol: &str,
+    exp: &Expr,
+    env: &mut TypeEnv,
+) -> Result<Type, TypeCheckError> {
     let expected_type = match env.find(symbol) {
         Some(typ) => typ.clone(),
         None => {
@@ -270,7 +265,7 @@ fn tc_set_bang_with_env(symbol: &str, exp: &Expr, env: &mut Env) -> Result<Type,
     }
 }
 
-fn tc_cons_with_env(first: &Expr, rest: &Expr, env: &mut Env) -> Result<Type, TypeCheckError> {
+fn tc_cons_with_env(first: &Expr, rest: &Expr, env: &mut TypeEnv) -> Result<Type, TypeCheckError> {
     let car_type = match tc_with_env(first, env) {
         Ok(typ) => typ,
         Err(e) => return Err(e),
@@ -295,7 +290,7 @@ fn tc_cons_with_env(first: &Expr, rest: &Expr, env: &mut Env) -> Result<Type, Ty
     }
 }
 
-fn tc_car_with_env(exp: &Expr, env: &mut Env) -> Result<Type, TypeCheckError> {
+fn tc_car_with_env(exp: &Expr, env: &mut TypeEnv) -> Result<Type, TypeCheckError> {
     match tc_with_env(exp, env) {
         Ok(lst_type) => match lst_type {
             Type::List(boxed_type) => Ok(*boxed_type),
@@ -307,7 +302,7 @@ fn tc_car_with_env(exp: &Expr, env: &mut Env) -> Result<Type, TypeCheckError> {
     }
 }
 
-fn tc_cdr_with_env(exp: &Expr, env: &mut Env) -> Result<Type, TypeCheckError> {
+fn tc_cdr_with_env(exp: &Expr, env: &mut TypeEnv) -> Result<Type, TypeCheckError> {
     match tc_with_env(exp, env) {
         Ok(lst_type) => match lst_type {
             Type::List(boxed_type) => Ok(Type::List(boxed_type)),
@@ -322,7 +317,7 @@ fn tc_cdr_with_env(exp: &Expr, env: &mut Env) -> Result<Type, TypeCheckError> {
 fn tc_apply_with_env(
     func: &Expr,
     args: &Vector<Expr>,
-    env: &mut Env,
+    env: &mut TypeEnv,
 ) -> Result<Type, TypeCheckError> {
     match tc_with_env(func, env) {
         Ok(typ) => {
@@ -337,18 +332,21 @@ fn tc_apply_with_env(
 }
 
 // This always returns Type::Bool, but we still need to type check the inside.
-fn tc_is_null_with_env(exp: &Expr, env: &mut Env) -> Result<Type, TypeCheckError> {
+fn tc_is_null_with_env(exp: &Expr, env: &mut TypeEnv) -> Result<Type, TypeCheckError> {
     match tc_with_env(exp, env) {
         Ok(_) => Ok(Type::Bool),
         Err(e) => Err(e),
     }
 }
 
-fn tc_array_with_env(values: &Vector<Expr>, env: &mut Env) -> Result<Vector<Type>, TypeCheckError> {
+fn tc_array_with_env(
+    values: &Vector<Expr>,
+    env: &mut TypeEnv,
+) -> Result<Vector<Type>, TypeCheckError> {
     values.iter().map(|val| tc_with_env(val, env)).collect()
 }
 
-pub fn tc_with_env(value: &Expr, env: &mut Env) -> Result<Type, TypeCheckError> {
+pub fn tc_with_env(value: &Expr, env: &mut TypeEnv) -> Result<Type, TypeCheckError> {
     match value {
         Expr::Num(_) => Ok(Type::Int),
         Expr::Bool(_) => Ok(Type::Bool),
@@ -373,7 +371,7 @@ pub fn tc_with_env(value: &Expr, env: &mut Env) -> Result<Type, TypeCheckError> 
 }
 
 pub fn type_check(value: &Expr) -> Result<Type, TypeCheckError> {
-    tc_with_env(value, &mut Env::new())
+    tc_with_env(value, &mut TypeEnv::new())
 }
 
 // Only test private helper functions here;

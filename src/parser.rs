@@ -1,9 +1,35 @@
-use crate::type_checker::Type;
 use im_rc::Vector;
 
-type Symbol = String;
+#[derive(Clone, Debug, PartialEq)]
+pub enum Type {
+    Int,
+    Bool,
+    Str,
+    List(Box<Type>),
+    Func(Vector<Type>, Box<Type>), // array of input types, and a return type
+}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Expr {
+    Binop(BinOp, Box<Expr>, Box<Expr>),     // operator, arg1, arg2
+    If(Box<Expr>, Box<Expr>, Box<Expr>),    // pred, consequent, alternate
+    Let(Vector<(String, Expr)>, Box<Expr>), // variable bindings, body
+    Lambda(Vector<(String, Type)>, Type, Box<Expr>), // arg names/types, return type, body
+    Begin(Vector<Expr>),
+    Set(String, Box<Expr>),
+    Cons(Box<Expr>, Box<Expr>),
+    Car(Box<Expr>),
+    Cdr(Box<Expr>),
+    IsNull(Box<Expr>),
+    Null(Type),
+    FnApp(Box<Expr>, Vector<Expr>), // func, arguments
+    Sym(String),
+    Num(i64),
+    Bool(bool),
+    Str(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum BinOp {
     Add,
     Subtract,
@@ -17,26 +43,6 @@ pub enum BinOp {
     And,
     Or,
     Concat,
-}
-
-#[derive(Clone, Debug)]
-pub enum Expr {
-    Binop(BinOp, Box<Expr>, Box<Expr>),     // operator, arg1, arg2
-    If(Box<Expr>, Box<Expr>, Box<Expr>),    // pred, consequent, alternate
-    Let(Vector<(Symbol, Expr)>, Box<Expr>), // variable bindings, body
-    Lambda(Vector<(Symbol, Type)>, Type, Box<Expr>), // arg names/types, return type, body
-    Begin(Vector<Expr>),
-    Set(Symbol, Box<Expr>),
-    Cons(Box<Expr>, Box<Expr>),
-    Car(Box<Expr>),
-    Cdr(Box<Expr>),
-    IsNull(Box<Expr>),
-    Null(Type),
-    FnApp(Box<Expr>, Vector<Expr>), // func, arguments
-    Sym(Symbol),
-    Num(i64),
-    Bool(bool),
-    Str(String),
 }
 
 #[derive(Clone, Debug)]
@@ -140,7 +146,7 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseEr
     }
 }
 
-fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(Symbol, Type)>, ParseError> {
+fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, ParseError> {
     let arg_list = match args.to_vec() {
         Some(vec) => vec,
         None => {
@@ -271,7 +277,7 @@ fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         }
     };
 
-    let parsed_bindings: Result<Vector<(Symbol, Expr)>, ParseError> = Vector::from(bindings)
+    let parsed_bindings: Result<Vector<(String, Expr)>, ParseError> = Vector::from(bindings)
         .iter()
         .map(|binding| {
             let binding_vec = match binding.to_vec() {
