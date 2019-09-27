@@ -29,7 +29,7 @@ pub enum Expr {
     Str(String),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BinOp {
     Add,
     Subtract,
@@ -91,7 +91,7 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseEr
                     return Err(ParseError::from(
                         "Type annotation for function is not a valid list.",
                     ))
-                }
+                },
             };
             // ensure that the function annotation has at least -> and a return type as elements
             if lst_vec.is_empty() {
@@ -122,7 +122,7 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseEr
                         Vector::from(input_types_unwrapped),
                         Box::from(return_type),
                     ))
-                }
+                },
                 Some("list") => {
                     if lst_vec.len() != 2 {
                         return Err(ParseError::from(
@@ -134,12 +134,12 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseEr
                         Err(e) => return Err(e),
                     };
                     Ok(Type::List(Box::from(lst_type)))
-                }
+                },
                 _ => Err(ParseError::from(
                     r#"Type annotation for function does not have "->" or "list" as first symbol."#,
                 )),
             }
-        }
+        },
         _ => Err(ParseError::from(
             "Type annotation is invalid or is missing.",
         )),
@@ -153,7 +153,7 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, Par
             return Err(ParseError::from(
                 "Lambda arguments are not in a valid list.",
             ))
-        }
+        },
     };
     arg_list
         .iter()
@@ -176,7 +176,7 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, Par
                     return Err(ParseError::from(
                         "Lambda argument does not contain the correct : separator.",
                     ))
-                }
+                },
             };
             if separator != ":" {
                 return Err(ParseError::from(
@@ -190,7 +190,7 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, Par
                     return Err(ParseError::from(
                         "Lambda argument does not have a valid name.",
                     ))
-                }
+                },
             };
             let arg_type = match convert_annotation_to_type(&arg_vec[2]) {
                 Ok(typ) => typ,
@@ -274,7 +274,7 @@ fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
             return Err(ParseError::from(
                 "Let expression bindings are not in a proper list.",
             ))
-        }
+        },
     };
 
     let parsed_bindings: Result<Vector<(String, Expr)>, ParseError> = Vector::from(bindings)
@@ -476,7 +476,7 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                 },
                 None => parse_func(&first, &rest),
             }
-        }
+        },
         lexpr::Value::Symbol(x) => match &x[..] {
             "true" => Ok(Expr::Bool(true)),
             "false" => Ok(Expr::Bool(false)),
