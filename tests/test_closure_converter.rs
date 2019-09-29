@@ -9,7 +9,7 @@ fn test_closure_convert() {
     let expected_exp = CExpr::Closure(
         Box::from(CExpr::Lambda(
             vector![
-                (String::from("env"), CType::Env(vector![CType::Int])),
+                (String::from("env0"), CType::Env(vector![])),
                 (String::from("x"), CType::Int)
             ],
             CType::Int,
@@ -19,12 +19,9 @@ fn test_closure_convert() {
                 Box::from(CExpr::Num(3)),
             )),
         )),
-        Box::from(CExpr::Env(vector![(
-            String::from("x"),
-            CExpr::Sym(String::from("x"))
-        )])),
+        Box::from(CExpr::Env(vector![])),
     );
-    assert_eq!(closure_convert(&parsed_exp).is_err(), true);
+    // assert_eq!(closure_convert(&parsed_exp).is_err(), false);
     // TODO: uncomment this
-    // assert_eq!(closure_convert(&parsed_exp), expected_exp);
+    assert_eq!(closure_convert(&parsed_exp).unwrap(), expected_exp);
 }
