@@ -1,5 +1,6 @@
 use crate::common::TypeEnv;
 use crate::parser::{BinOp, Expr, Type};
+use crate::type_checker::type_check;
 use im_rc::{vector, Vector};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -14,7 +15,7 @@ pub static GENSYM_COUNT: AtomicU64 = AtomicU64::new(0);
 
 // "global variable" usage derived from https://stackoverflow.com/a/27826181
 fn generate_env_name() -> String {
-    let name = String::from(format!("env{}", GENSYM_COUNT.load(Ordering::SeqCst)));
+    let name = format!("env{}", GENSYM_COUNT.load(Ordering::SeqCst));
     GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
     name
 }
@@ -24,9 +25,6 @@ pub fn dangerously_reset_gensym_count() {
     GENSYM_COUNT.store(0, Ordering::SeqCst);
 }
 
-// TODO: Depending on whether closure conversion has any legitimate "edge" cases,
-// I think I might be able to simplify a lot of the code to no longer require
-// returning Result enums
 #[derive(Clone, Debug)]
 pub struct ClosureConvertError(String);
 
@@ -103,39 +101,35 @@ pub enum CExpr {
     Str(String),
 }
 
-fn closure_convert_type(typ: &Type) -> Result<CType, ClosureConvertError> {
+fn cc_type(typ: &Type) -> Result<CType, ClosureConvertError> {
     match typ {
         Type::Int => Ok(CType::Int),
         Type::Bool => Ok(CType::Bool),
         Type::Str => Ok(CType::Str),
-        Type::List(x) => {
-            closure_convert_type(x).and_then(|ctype| Ok(CType::List(Box::from(ctype))))
-        },
+        Type::List(x) => cc_type(x).and_then(|ctype| Ok(CType::List(Box::from(ctype)))),
         Type::Func(arg_types, ret_type) => {
-            let carg_types: Result<Vector<CType>, ClosureConvertError> = arg_types
-                .iter()
-                .map(|arg_typ| closure_convert_type(arg_typ))
-                .collect();
+            let carg_types: Result<Vector<CType>, ClosureConvertError> =
+                arg_types.iter().map(|arg_typ| cc_type(arg_typ)).collect();
 
             carg_types.and_then(|carg_types| {
-                closure_convert_type(ret_type.as_ref())
+                cc_type(ret_type.as_ref())
                     .and_then(|cret_type| Ok(CType::Func(carg_types, Box::from(cret_type))))
             })
-        },
+        }
     }
 }
 
-fn closure_convert_bindings(
+fn cc_bindings(
     bindings: &Vector<(String, Expr)>,
     env: &TypeEnv<CType>,
 ) -> Result<Vector<(String, CExpr)>, ClosureConvertError> {
     bindings
         .iter()
-        .map(|pair| closure_convert(&pair.1, env).and_then(|cexp| Ok((pair.0.clone(), cexp))))
+        .map(|pair| cc(&pair.1, env).and_then(|cexp| Ok((pair.0.clone(), cexp))))
         .collect()
 }
 
-fn closure_convert_lambda(
+fn cc_lambda(
     params: &Vector<(String, Type)>,
     ret_type: &Type,
     body: &Expr,
@@ -145,9 +139,7 @@ fn closure_convert_lambda(
     // Start with converting Type -> CType
     let new_params: Result<Vector<(String, CType)>, ClosureConvertError> = params
         .iter()
-        .map(|pair| {
-            closure_convert_type(&pair.1).and_then(|cparam_type| Ok((pair.0.clone(), cparam_type)))
-        })
+        .map(|pair| cc_type(&pair.1).and_then(|cparam_type| Ok((pair.0.clone(), cparam_type))))
         .collect();
     // Unwrap result
     let mut new_params: Vector<(String, CType)> = match new_params {
@@ -155,7 +147,7 @@ fn closure_convert_lambda(
         Err(e) => return Err(e),
     };
 
-    let cbody = match closure_convert(body, env) {
+    let cbody = match cc(body, &env.add_bindings(new_params.clone())) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
@@ -164,8 +156,20 @@ fn closure_convert_lambda(
         Ok(val) => val,
         Err(e) => return Err(e),
     };
-    // TODO: get actual types of free variables somehow
-    let free_var_types: Vector<CType> = free_vars.iter().map(|_x| CType::Unknown).collect();
+
+    let free_var_types: Vector<CType> = match free_vars
+        .iter()
+        .map(|x| match env.find(x) {
+            Some(val) => Ok(val.clone()),
+            None => Err(ClosureConvertError::from(
+                "Free variable found, environment cannot be constructed with proper type.",
+            )),
+        })
+        .collect()
+    {
+        Ok(val) => val,
+        Err(e) => return Err(e),
+    };
 
     // Construct environment name
     let env_name: String = generate_env_name();
@@ -179,7 +183,7 @@ fn closure_convert_lambda(
         .map(|var| (var.clone(), CExpr::Sym(var.clone())))
         .collect();
     let env_exp = CExpr::Env(env_contents);
-    let mut new_body: CExpr = match closure_convert(body, env) {
+    let mut new_body: CExpr = match cc(body, env) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
@@ -193,7 +197,7 @@ fn closure_convert_lambda(
             Err(e) => return Err(e),
         };
     }
-    let cret_type: CType = match closure_convert_type(ret_type) {
+    let cret_type: CType = match cc_type(ret_type) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
@@ -224,7 +228,7 @@ fn substitute(
                 substitute(arg2, match_exp, replace_with)
                     .and_then(|sarg2| Ok(CExpr::Binop(*op, Box::from(sarg1), Box::from(sarg2))))
             })
-        },
+        }
         CExpr::If(pred, cons, alt) => substitute(pred, match_exp, replace_with).and_then(|spred| {
             substitute(cons, match_exp, replace_with).and_then(|scons| {
                 substitute(alt, match_exp, replace_with).and_then(|salt| {
@@ -250,7 +254,7 @@ fn substitute(
             };
             substitute(body, match_exp, replace_with)
                 .and_then(|sbody| Ok(CExpr::Let(bindings_sub, Box::from(sbody))))
-        },
+        }
         CExpr::Lambda(params, ret_type, body) => {
             let param_names: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
             if !param_names.contains(match_exp) {
@@ -270,19 +274,19 @@ fn substitute(
                     body.clone(),
                 ))
             }
-        },
+        }
         CExpr::Closure(lambda, env) => {
             substitute(lambda, match_exp, replace_with).and_then(|slambda| {
                 substitute(env, match_exp, replace_with)
                     .and_then(|senv| Ok(CExpr::Closure(Box::from(slambda), Box::from(senv))))
             })
-        },
+        }
         CExpr::ClosureApp(func, args) => {
             substitute(func, match_exp, replace_with).and_then(|sfunc| {
                 substitute_array(args, match_exp, replace_with)
                     .and_then(|sargs| Ok(CExpr::ClosureApp(Box::from(sfunc), sargs)))
             })
-        },
+        }
         CExpr::Env(bindings) => {
             match bindings
                 .iter()
@@ -293,9 +297,9 @@ fn substitute(
                 .collect()
             {
                 Ok(val) => Ok(CExpr::Env(val)),
-                Err(e) => return Err(e),
+                Err(e) => Err(e),
             }
-        },
+        }
         CExpr::EnvGet(_env_name, _var) => Ok(exp.clone()), // ?
         CExpr::Begin(exps) => substitute_array(exps, match_exp, replace_with)
             .and_then(|sexps| Ok(CExpr::Begin(sexps))),
@@ -306,7 +310,7 @@ fn substitute(
                 substitute(second, match_exp, replace_with)
                     .and_then(|ssecond| Ok(CExpr::Cons(Box::from(sfirst), Box::from(ssecond))))
             })
-        },
+        }
         CExpr::Car(val) => substitute(val, match_exp, replace_with)
             .and_then(|sval| Ok(CExpr::Car(Box::from(sval)))),
         CExpr::Cdr(val) => substitute(val, match_exp, replace_with)
@@ -320,7 +324,7 @@ fn substitute(
             } else {
                 Ok(CExpr::Sym(x.clone()))
             }
-        },
+        }
         CExpr::Num(_) => Ok(exp.clone()),
         CExpr::Bool(_) => Ok(exp.clone()),
         CExpr::Str(_) => Ok(exp.clone()),
@@ -356,17 +360,17 @@ fn get_free_vars(exp: &CExpr) -> Result<Vector<String>, ClosureConvertError> {
             };
             body_vars.retain(|var| !binding_vars.contains(var));
             Ok(body_vars)
-        },
+        }
         CExpr::Lambda(params, _ret_type, body) => get_free_vars_lambda(params, body),
         CExpr::Closure(lambda, env) => get_free_vars(lambda).and_then(|vars1| {
             get_free_vars(env).and_then(|vars2| Ok(concat_vectors(vars1, vars2)))
         }),
         CExpr::ClosureApp(func, args) => {
             get_free_vars_array(&concat_vectors(vector![*func.clone()], args.clone()))
-        },
+        }
         CExpr::Env(bindings) => {
             get_free_vars_array(&bindings.iter().map(|pair| pair.1.clone()).collect())
-        },
+        }
         CExpr::EnvGet(env_name, _var) => Ok(vector![env_name.clone()]),
         CExpr::Begin(exps) => get_free_vars_array(exps),
         CExpr::Set(_var, val) => get_free_vars(val),
@@ -397,23 +401,23 @@ fn get_free_vars_lambda(
     Ok(free_vars)
 }
 
-pub fn closure_convert_main(exp: &Expr) -> Result<CExpr, ClosureConvertError> {
-    closure_convert(exp, &TypeEnv::new())
+pub fn closure_convert(exp: &Expr) -> Result<CExpr, ClosureConvertError> {
+    cc(exp, &TypeEnv::new())
 }
 
-fn closure_convert(exp: &Expr, env: &TypeEnv<CType>) -> Result<CExpr, ClosureConvertError> {
+fn cc(exp: &Expr, env: &TypeEnv<CType>) -> Result<CExpr, ClosureConvertError> {
     match exp {
         Expr::Num(x) => Ok(CExpr::Num(*x)),
         Expr::Bool(x) => Ok(CExpr::Bool(*x)),
         Expr::Str(x) => Ok(CExpr::Str(x.clone())),
         Expr::Sym(x) => Ok(CExpr::Sym(x.clone())),
-        Expr::Binop(op, arg1, arg2) => closure_convert(arg1, env).and_then(|carg1| {
-            closure_convert(arg2, env)
+        Expr::Binop(op, arg1, arg2) => cc(arg1, env).and_then(|carg1| {
+            cc(arg2, env)
                 .and_then(|carg2| Ok(CExpr::Binop(*op, Box::from(carg1), Box::from(carg2))))
         }),
-        Expr::If(pred, cons, alt) => closure_convert(pred, env).and_then(|cpred| {
-            closure_convert(cons, env).and_then(|ccons| {
-                closure_convert(alt, env).and_then(|calt| {
+        Expr::If(pred, cons, alt) => cc(pred, env).and_then(|cpred| {
+            cc(cons, env).and_then(|ccons| {
+                cc(alt, env).and_then(|calt| {
                     Ok(CExpr::If(
                         Box::from(cpred),
                         Box::from(ccons),
@@ -423,48 +427,48 @@ fn closure_convert(exp: &Expr, env: &TypeEnv<CType>) -> Result<CExpr, ClosureCon
             })
         }),
         Expr::Let(bindings, body) => {
-            closure_convert_bindings(bindings, env).and_then(|cbindings| {
-                closure_convert(body, env)
-                    .and_then(|cbody| Ok(CExpr::Let(cbindings, Box::from(cbody))))
-            })
-        },
-        Expr::Lambda(params, ret_typ, body) => closure_convert_lambda(params, ret_typ, body, env),
-        Expr::Begin(exps) => {
-            let cexps: Result<Vector<CExpr>, ClosureConvertError> = exps
+            let binding_type_map: Vector<(String, CType)> = match bindings
                 .iter()
-                .map(|subexp| closure_convert(&subexp, env).and_then(|csubexp| Ok(csubexp)))
-                .collect();
-            cexps.and_then(|cexps| Ok(CExpr::Begin(cexps)))
-        },
-        Expr::Set(sym, val) => {
-            return closure_convert(val, env)
-                .and_then(|cval| Ok(CExpr::Set(sym.clone(), Box::from(cval))));
-        },
-        Expr::Cons(first, rest) => closure_convert(first, env).and_then(|cfirst| {
-            closure_convert(rest, env)
-                .and_then(|crest| Ok(CExpr::Cons(Box::from(cfirst), Box::from(crest))))
-        }),
-        Expr::Car(val) => {
-            closure_convert(val, env).and_then(|cval| Ok(CExpr::Car(Box::from(cval))))
-        },
-        Expr::Cdr(val) => {
-            closure_convert(val, env).and_then(|cval| Ok(CExpr::Cdr(Box::from(cval))))
-        },
-        Expr::IsNull(val) => {
-            return closure_convert(val, env).and_then(|cval| Ok(CExpr::IsNull(Box::from(cval))));
-        },
-        Expr::Null(typ) => closure_convert_type(typ).and_then(|ctyp| Ok(CExpr::Null(ctyp))),
-        Expr::FnApp(func, args) => {
-            let cargs: Vector<CExpr> = match args
-                .iter()
-                .map(|arg| closure_convert(&arg, env).and_then(|carg| Ok(carg)))
+                .map(|pair| match type_check(&pair.1) {
+                    Ok(exp_typ) => {
+                        cc_type(&exp_typ).and_then(|cexp_typ| Ok((pair.0.clone(), cexp_typ)))
+                    }
+                    Err(e) => Err(ClosureConvertError::from(
+                        format!("Type checking error during closure conversion: {}", e).as_str(),
+                    )),
+                })
                 .collect()
             {
                 Ok(val) => val,
                 Err(e) => return Err(e),
             };
-            closure_convert(func, env)
-                .and_then(|cfunc| Ok(CExpr::ClosureApp(Box::from(cfunc), cargs)))
-        },
+            cc_bindings(bindings, env).and_then(|cbindings| {
+                cc(body, &env.add_bindings(binding_type_map))
+                    .and_then(|cbody| Ok(CExpr::Let(cbindings, Box::from(cbody))))
+            })
+        }
+        Expr::Lambda(params, ret_typ, body) => cc_lambda(params, ret_typ, body, env),
+        Expr::Begin(exps) => {
+            let cexps: Result<Vector<CExpr>, ClosureConvertError> =
+                exps.iter().map(|subexp| cc(&subexp, env)).collect();
+            cexps.and_then(|cexps| Ok(CExpr::Begin(cexps)))
+        }
+        Expr::Set(sym, val) => {
+            cc(val, env).and_then(|cval| Ok(CExpr::Set(sym.clone(), Box::from(cval))))
+        }
+        Expr::Cons(first, rest) => cc(first, env).and_then(|cfirst| {
+            cc(rest, env).and_then(|crest| Ok(CExpr::Cons(Box::from(cfirst), Box::from(crest))))
+        }),
+        Expr::Car(val) => cc(val, env).and_then(|cval| Ok(CExpr::Car(Box::from(cval)))),
+        Expr::Cdr(val) => cc(val, env).and_then(|cval| Ok(CExpr::Cdr(Box::from(cval)))),
+        Expr::IsNull(val) => cc(val, env).and_then(|cval| Ok(CExpr::IsNull(Box::from(cval)))),
+        Expr::Null(typ) => cc_type(typ).and_then(|ctyp| Ok(CExpr::Null(ctyp))),
+        Expr::FnApp(func, args) => {
+            let cargs: Vector<CExpr> = match args.iter().map(|arg| cc(&arg, env)).collect() {
+                Ok(val) => val,
+                Err(e) => return Err(e),
+            };
+            cc(func, env).and_then(|cfunc| Ok(CExpr::ClosureApp(Box::from(cfunc), cargs)))
+        }
     }
 }
