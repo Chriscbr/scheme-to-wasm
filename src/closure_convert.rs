@@ -1,3 +1,4 @@
+use crate::common::TypeEnv;
 use crate::parser::{BinOp, Expr, Type};
 use im_rc::{vector, Vector};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -126,10 +127,11 @@ fn closure_convert_type(typ: &Type) -> Result<CType, ClosureConvertError> {
 
 fn closure_convert_bindings(
     bindings: &Vector<(String, Expr)>,
+    env: &TypeEnv<CType>,
 ) -> Result<Vector<(String, CExpr)>, ClosureConvertError> {
     bindings
         .iter()
-        .map(|pair| closure_convert(&pair.1).and_then(|cexp| Ok((pair.0.clone(), cexp))))
+        .map(|pair| closure_convert(&pair.1, env).and_then(|cexp| Ok((pair.0.clone(), cexp))))
         .collect()
 }
 
@@ -137,6 +139,7 @@ fn closure_convert_lambda(
     params: &Vector<(String, Type)>,
     ret_type: &Type,
     body: &Expr,
+    env: &TypeEnv<CType>,
 ) -> Result<CExpr, ClosureConvertError> {
     // Constructing the parameter list for the new lambda expression
     // Start with converting Type -> CType
@@ -152,7 +155,7 @@ fn closure_convert_lambda(
         Err(e) => return Err(e),
     };
 
-    let cbody = match closure_convert(body) {
+    let cbody = match closure_convert(body, env) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
@@ -176,7 +179,7 @@ fn closure_convert_lambda(
         .map(|var| (var.clone(), CExpr::Sym(var.clone())))
         .collect();
     let env_exp = CExpr::Env(env_contents);
-    let mut new_body: CExpr = match closure_convert(body) {
+    let mut new_body: CExpr = match closure_convert(body, env) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
@@ -394,19 +397,23 @@ fn get_free_vars_lambda(
     Ok(free_vars)
 }
 
-pub fn closure_convert(exp: &Expr) -> Result<CExpr, ClosureConvertError> {
+pub fn closure_convert_main(exp: &Expr) -> Result<CExpr, ClosureConvertError> {
+    closure_convert(exp, &TypeEnv::new())
+}
+
+fn closure_convert(exp: &Expr, env: &TypeEnv<CType>) -> Result<CExpr, ClosureConvertError> {
     match exp {
         Expr::Num(x) => Ok(CExpr::Num(*x)),
         Expr::Bool(x) => Ok(CExpr::Bool(*x)),
         Expr::Str(x) => Ok(CExpr::Str(x.clone())),
         Expr::Sym(x) => Ok(CExpr::Sym(x.clone())),
-        Expr::Binop(op, arg1, arg2) => closure_convert(arg1).and_then(|carg1| {
-            closure_convert(arg2)
+        Expr::Binop(op, arg1, arg2) => closure_convert(arg1, env).and_then(|carg1| {
+            closure_convert(arg2, env)
                 .and_then(|carg2| Ok(CExpr::Binop(*op, Box::from(carg1), Box::from(carg2))))
         }),
-        Expr::If(pred, cons, alt) => closure_convert(pred).and_then(|cpred| {
-            closure_convert(cons).and_then(|ccons| {
-                closure_convert(alt).and_then(|calt| {
+        Expr::If(pred, cons, alt) => closure_convert(pred, env).and_then(|cpred| {
+            closure_convert(cons, env).and_then(|ccons| {
+                closure_convert(alt, env).and_then(|calt| {
                     Ok(CExpr::If(
                         Box::from(cpred),
                         Box::from(ccons),
@@ -415,32 +422,49 @@ pub fn closure_convert(exp: &Expr) -> Result<CExpr, ClosureConvertError> {
                 })
             })
         }),
-        Expr::Let(bindings, body) => closure_convert_bindings(bindings).and_then(|cbindings| {
-            closure_convert(body).and_then(|cbody| Ok(CExpr::Let(cbindings, Box::from(cbody))))
-        }),
-        Expr::Lambda(params, ret_typ, body) => closure_convert_lambda(params, ret_typ, body),
+        Expr::Let(bindings, body) => {
+            closure_convert_bindings(bindings, env).and_then(|cbindings| {
+                closure_convert(body, env)
+                    .and_then(|cbody| Ok(CExpr::Let(cbindings, Box::from(cbody))))
+            })
+        },
+        Expr::Lambda(params, ret_typ, body) => closure_convert_lambda(params, ret_typ, body, env),
         Expr::Begin(exps) => {
             let cexps: Result<Vector<CExpr>, ClosureConvertError> = exps
                 .iter()
-                .map(|subexp| closure_convert(&subexp).and_then(|csubexp| Ok(csubexp)))
+                .map(|subexp| closure_convert(&subexp, env).and_then(|csubexp| Ok(csubexp)))
                 .collect();
             cexps.and_then(|cexps| Ok(CExpr::Begin(cexps)))
         },
         Expr::Set(sym, val) => {
-            return closure_convert(val)
+            return closure_convert(val, env)
                 .and_then(|cval| Ok(CExpr::Set(sym.clone(), Box::from(cval))));
         },
-        Expr::Cons(first, rest) => closure_convert(first).and_then(|cfirst| {
-            closure_convert(rest)
+        Expr::Cons(first, rest) => closure_convert(first, env).and_then(|cfirst| {
+            closure_convert(rest, env)
                 .and_then(|crest| Ok(CExpr::Cons(Box::from(cfirst), Box::from(crest))))
         }),
-        Expr::Car(val) => closure_convert(val).and_then(|cval| Ok(CExpr::Car(Box::from(cval)))),
-        Expr::Cdr(val) => closure_convert(val).and_then(|cval| Ok(CExpr::Cdr(Box::from(cval)))),
+        Expr::Car(val) => {
+            closure_convert(val, env).and_then(|cval| Ok(CExpr::Car(Box::from(cval))))
+        },
+        Expr::Cdr(val) => {
+            closure_convert(val, env).and_then(|cval| Ok(CExpr::Cdr(Box::from(cval))))
+        },
         Expr::IsNull(val) => {
-            return closure_convert(val).and_then(|cval| Ok(CExpr::IsNull(Box::from(cval))));
+            return closure_convert(val, env).and_then(|cval| Ok(CExpr::IsNull(Box::from(cval))));
         },
         Expr::Null(typ) => closure_convert_type(typ).and_then(|ctyp| Ok(CExpr::Null(ctyp))),
-        // TODO: FnApp
-        Expr::FnApp(func, args) => Err(ClosureConvertError::from("Unimplemented.")),
+        Expr::FnApp(func, args) => {
+            let cargs: Vector<CExpr> = match args
+                .iter()
+                .map(|arg| closure_convert(&arg, env).and_then(|carg| Ok(carg)))
+                .collect()
+            {
+                Ok(val) => val,
+                Err(e) => return Err(e),
+            };
+            closure_convert(func, env)
+                .and_then(|cfunc| Ok(CExpr::ClosureApp(Box::from(cfunc), cargs)))
+        },
     }
 }

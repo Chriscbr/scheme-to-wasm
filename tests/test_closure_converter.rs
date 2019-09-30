@@ -1,5 +1,5 @@
 use im_rc::vector;
-use scheme_to_rust::closure_convert::{closure_convert, CExpr, CType};
+use scheme_to_rust::closure_convert::{closure_convert_main, CExpr, CType};
 use scheme_to_rust::parser::{parse, BinOp};
 
 #[test]
@@ -21,7 +21,7 @@ fn test_closure_convert_lambda_no_free_vars() {
         )),
         Box::from(CExpr::Env(vector![])),
     );
-    // assert_eq!(closure_convert(&parsed_exp).unwrap(), expected_exp);
+    // assert_eq!(closure_convert_main(&parsed_exp).unwrap(), expected_exp);
 }
 
 #[test]
@@ -49,5 +49,5 @@ fn test_closure_convert_lambda_yes_free_vars() {
             )])),
         )),
     );
-    // assert_eq!(closure_convert(&parsed_exp).unwrap(), expected_exp);
+    // assert_eq!(closure_convert_main(&parsed_exp).unwrap(), expected_exp);
 }
