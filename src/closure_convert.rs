@@ -1,5 +1,6 @@
 use crate::parser::{BinOp, Expr, Type};
 use im_rc::{vector, Vector};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Helper function that returns concatenation of two im_rc::Vector's
 fn concat_vectors<T: Clone>(vec1: Vector<T>, vec2: Vector<T>) -> Vector<T> {
@@ -8,9 +9,19 @@ fn concat_vectors<T: Clone>(vec1: Vector<T>, vec2: Vector<T>) -> Vector<T> {
     val
 }
 
-use std::sync::atomic::{AtomicU64, Ordering};
+pub static GENSYM_COUNT: AtomicU64 = AtomicU64::new(0);
 
-static GENSYM_COUNT: AtomicU64 = AtomicU64::new(0);
+// "global variable" usage derived from https://stackoverflow.com/a/27826181
+fn generate_env_name() -> String {
+    let name = String::from(format!("env{}", GENSYM_COUNT.load(Ordering::SeqCst)));
+    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
+    name
+}
+
+/// Only use this for testing purposes!
+pub fn dangerously_reset_gensym_count() {
+    GENSYM_COUNT.store(0, Ordering::SeqCst);
+}
 
 // TODO: Depending on whether closure conversion has any legitimate "edge" cases,
 // I think I might be able to simplify a lot of the code to no longer require
@@ -172,7 +183,7 @@ fn closure_convert_lambda(
     for var in free_vars {
         new_body = match substitute(
             &new_body,
-            &CExpr::Sym(var.clone()),
+            &var.clone(),
             &CExpr::EnvGet(env_name.clone(), var.clone()),
         ) {
             Ok(val) => val,
@@ -189,20 +200,128 @@ fn closure_convert_lambda(
     ))
 }
 
-// TODO: Implement
-fn substitute(
-    exp: &CExpr,
-    match_exp: &CExpr,
+fn substitute_array(
+    exps: &Vector<CExpr>,
+    match_exp: &String,
     replace_with: &CExpr,
-) -> Result<CExpr, ClosureConvertError> {
-    Err(ClosureConvertError::from("Unimplemented."))
+) -> Result<Vector<CExpr>, ClosureConvertError> {
+    exps.iter()
+        .map(|val| substitute(val, match_exp, replace_with))
+        .collect()
 }
 
-// "global variable" usage derived from https://stackoverflow.com/a/27826181
-fn generate_env_name() -> String {
-    let name = String::from(format!("env{}", GENSYM_COUNT.load(Ordering::SeqCst)));
-    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
-    name
+fn substitute(
+    exp: &CExpr,
+    match_exp: &String,
+    replace_with: &CExpr,
+) -> Result<CExpr, ClosureConvertError> {
+    match exp {
+        CExpr::Binop(op, arg1, arg2) => {
+            substitute(arg1, match_exp, replace_with).and_then(|sarg1| {
+                substitute(arg2, match_exp, replace_with)
+                    .and_then(|sarg2| Ok(CExpr::Binop(*op, Box::from(sarg1), Box::from(sarg2))))
+            })
+        },
+        CExpr::If(pred, cons, alt) => substitute(pred, match_exp, replace_with).and_then(|spred| {
+            substitute(cons, match_exp, replace_with).and_then(|scons| {
+                substitute(alt, match_exp, replace_with).and_then(|salt| {
+                    Ok(CExpr::If(
+                        Box::from(spred),
+                        Box::from(scons),
+                        Box::from(salt),
+                    ))
+                })
+            })
+        }),
+        CExpr::Let(bindings, body) => {
+            let bindings_sub: Result<Vector<(String, CExpr)>, ClosureConvertError> = bindings
+                .iter()
+                .map(|pair| {
+                    substitute(&pair.1, match_exp, replace_with)
+                        .and_then(|sexp| Ok((pair.0.clone(), sexp)))
+                })
+                .collect();
+            let bindings_sub: Vector<(String, CExpr)> = match bindings_sub {
+                Ok(val) => val,
+                Err(e) => return Err(e),
+            };
+            substitute(body, match_exp, replace_with)
+                .and_then(|sbody| Ok(CExpr::Let(bindings_sub, Box::from(sbody))))
+        },
+        CExpr::Lambda(params, ret_type, body) => {
+            let param_names: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
+            if !param_names.contains(match_exp) {
+                let sbody = match substitute(body, match_exp, replace_with) {
+                    Ok(val) => val,
+                    Err(e) => return Err(e),
+                };
+                Ok(CExpr::Lambda(
+                    params.clone(),
+                    ret_type.clone(),
+                    Box::from(sbody),
+                ))
+            } else {
+                Ok(CExpr::Lambda(
+                    params.clone(),
+                    ret_type.clone(),
+                    body.clone(),
+                ))
+            }
+        },
+        CExpr::Closure(lambda, env) => {
+            substitute(lambda, match_exp, replace_with).and_then(|slambda| {
+                substitute(env, match_exp, replace_with)
+                    .and_then(|senv| Ok(CExpr::Closure(Box::from(slambda), Box::from(senv))))
+            })
+        },
+        CExpr::ClosureApp(func, args) => {
+            substitute(func, match_exp, replace_with).and_then(|sfunc| {
+                substitute_array(args, match_exp, replace_with)
+                    .and_then(|sargs| Ok(CExpr::ClosureApp(Box::from(sfunc), sargs)))
+            })
+        },
+        CExpr::Env(bindings) => {
+            match bindings
+                .iter()
+                .map(|pair| {
+                    substitute(&pair.1, match_exp, replace_with)
+                        .and_then(|sexp| Ok((pair.0.clone(), sexp)))
+                })
+                .collect()
+            {
+                Ok(val) => Ok(CExpr::Env(val)),
+                Err(e) => return Err(e),
+            }
+        },
+        CExpr::EnvGet(_env_name, _var) => Ok(exp.clone()), // ?
+        CExpr::Begin(exps) => substitute_array(exps, match_exp, replace_with)
+            .and_then(|sexps| Ok(CExpr::Begin(sexps))),
+        CExpr::Set(var, val) => substitute(val, match_exp, replace_with)
+            .and_then(|sval| Ok(CExpr::Set(var.clone(), Box::from(sval)))),
+        CExpr::Cons(first, second) => {
+            substitute(first, match_exp, replace_with).and_then(|sfirst| {
+                substitute(second, match_exp, replace_with)
+                    .and_then(|ssecond| Ok(CExpr::Cons(Box::from(sfirst), Box::from(ssecond))))
+            })
+        },
+        CExpr::Car(val) => substitute(val, match_exp, replace_with)
+            .and_then(|sval| Ok(CExpr::Car(Box::from(sval)))),
+        CExpr::Cdr(val) => substitute(val, match_exp, replace_with)
+            .and_then(|sval| Ok(CExpr::Cdr(Box::from(sval)))),
+        CExpr::IsNull(val) => substitute(val, match_exp, replace_with)
+            .and_then(|sval| Ok(CExpr::IsNull(Box::from(sval)))),
+        CExpr::Null(_) => Ok(exp.clone()),
+        CExpr::Sym(x) => {
+            if x == match_exp {
+                Ok(replace_with.clone())
+            } else {
+                Ok(CExpr::Sym(x.clone()))
+            }
+        },
+        CExpr::Num(_) => Ok(exp.clone()),
+        CExpr::Bool(_) => Ok(exp.clone()),
+        CExpr::Str(_) => Ok(exp.clone()),
+    }
 }
 
 fn get_free_vars_array(exps: &Vector<CExpr>) -> Result<Vector<String>, ClosureConvertError> {
