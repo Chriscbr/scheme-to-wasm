@@ -27,7 +27,7 @@ fn test_closure_convert_lambda_no_free_vars() {
             CType::Int,
             Box::from(CExpr::Binop(
                 BinOp::Add,
-                Box::from(CExpr::Sym(String::from("x"))),
+                Box::from(CExpr::Id(String::from("x"))),
                 Box::from(CExpr::Num(3)),
             )),
         )),
@@ -54,13 +54,13 @@ fn test_closure_convert_lambda_yes_free_vars() {
                 CType::Int,
                 Box::from(CExpr::Binop(
                     BinOp::Add,
-                    Box::from(CExpr::Sym(String::from("x"))),
+                    Box::from(CExpr::Id(String::from("x"))),
                     Box::from(CExpr::EnvGet(String::from("env0"), String::from("y"))),
                 )),
             )),
             Box::from(CExpr::Env(vector![(
                 String::from("y"),
-                CExpr::Sym(String::from("y"))
+                CExpr::Id(String::from("y"))
             )])),
         )),
     );

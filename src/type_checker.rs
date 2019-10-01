@@ -39,7 +39,7 @@ fn check_type_arrays_equal(arr1: &Vector<Type>, arr2: &Vector<Type>) -> bool {
             Type::Func(arg_types2, ret_type_boxed2) => {
                 check_type_arrays_equal(arg_types1, arg_types2)
                     && (*ret_type_boxed1 == *ret_type_boxed2)
-            },
+            }
             _ => false,
         },
         _ => typ1 == typ2,
@@ -60,7 +60,7 @@ fn check_lambda_type_with_inputs(
                     "Argument types and parameter types of function application do not match.",
                 ))
             }
-        },
+        }
         _ => Err(TypeCheckError::from("Expected a function type.")),
     }
 }
@@ -83,7 +83,7 @@ fn tc_binop_with_env(
             arg1_expect_typ = Type::Int;
             arg2_expect_typ = Type::Int;
             ret_typ = Type::Int;
-        },
+        }
         BinOp::LessThan
         | BinOp::GreaterThan
         | BinOp::LessOrEqual
@@ -92,17 +92,17 @@ fn tc_binop_with_env(
             arg1_expect_typ = Type::Int;
             arg2_expect_typ = Type::Int;
             ret_typ = Type::Bool;
-        },
+        }
         BinOp::And | BinOp::Or => {
             arg1_expect_typ = Type::Bool;
             arg2_expect_typ = Type::Bool;
             ret_typ = Type::Bool;
-        },
+        }
         BinOp::Concat => {
             arg1_expect_typ = Type::Str;
             arg2_expect_typ = Type::Str;
             ret_typ = Type::Str;
-        },
+        }
     }
     tc_with_env(arg1, env).and_then(|arg1_typ| {
         tc_with_env(arg2, env).and_then(|arg2_typ| {
@@ -160,7 +160,7 @@ fn tc_let_with_env(
             // there ought to be an easier way to convert an im::vector into a slice
             let mut new_env = env.add_bindings(val);
             tc_with_env(body, &mut new_env)
-        },
+        }
         Err(e) => Err(e),
     }
 }
@@ -211,7 +211,7 @@ fn tc_set_bang_with_env(
             return Err(TypeCheckError::from(
                 "Variable assignment cannot occur before it has been defined!",
             ))
-        },
+        }
     };
     match tc_with_env(exp, env) {
         Ok(typ) => {
@@ -222,7 +222,7 @@ fn tc_set_bang_with_env(
                     "Type of set! body does not match variable's initialized type.",
                 ))
             }
-        },
+        }
         Err(e) => Err(e),
     }
 }
@@ -249,7 +249,7 @@ fn tc_cons_with_env(
                     "Car of cons does not match type of cdr.",
                 ))
             }
-        },
+        }
         _ => Err(TypeCheckError::from(
             "Cdr of cons expression is not a list type.",
         )),
@@ -292,7 +292,7 @@ fn tc_apply_with_env(
                 Err(e) => return Err(e),
             };
             check_lambda_type_with_inputs(&typ, &param_types)
-        },
+        }
         Err(e) => Err(e),
     }
 }
@@ -317,7 +317,7 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
         Expr::Num(_) => Ok(Type::Int),
         Expr::Bool(_) => Ok(Type::Bool),
         Expr::Str(_) => Ok(Type::Str),
-        Expr::Sym(sym) => match env.find(sym) {
+        Expr::Id(sym) => match env.find(sym) {
             Some(val) => Ok(val.clone()),
             None => Err(TypeCheckError::from("Not a recognized function name.")),
         },

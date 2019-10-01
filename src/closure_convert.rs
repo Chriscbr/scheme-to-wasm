@@ -124,7 +124,7 @@ pub enum CExpr {
     IsNull(Box<CExpr>),
     Null(CType),
 
-    Sym(String),
+    Id(String),
     Num(i64),
     Bool(bool),
     Str(String),
@@ -165,7 +165,7 @@ impl std::fmt::Display for CExpr {
             CExpr::Cdr(exp) => write!(f, "(cdr {})", exp),
             CExpr::IsNull(exp) => write!(f, "(null? {})", exp),
             CExpr::Null(typ) => write!(f, "(null {})", typ),
-            CExpr::Sym(val) => write!(f, "{}", val),
+            CExpr::Id(val) => write!(f, "{}", val),
             CExpr::Num(val) => write!(f, "{}", val),
             CExpr::Bool(val) => write!(f, "{}", if true { "true" } else { "false" }),
             CExpr::Str(val) => write!(f, "\"{}\"", val),
@@ -249,10 +249,10 @@ fn cc_lambda(
     // Add environment to beginning of parameter list
     new_params.push_front((env_name.clone(), CType::Env(free_var_types)));
 
-    // (x, Sym(x)) (y, Sym(y)) ...
+    // (x, Id(x)) (y, Id(y)) ...
     let env_contents: Vector<(String, CExpr)> = free_vars
         .iter()
-        .map(|var| (var.clone(), CExpr::Sym(var.clone())))
+        .map(|var| (var.clone(), CExpr::Id(var.clone())))
         .collect();
     let env_exp = CExpr::Env(env_contents);
     let mut new_body: CExpr = match cc(body, env) {
@@ -390,11 +390,11 @@ fn substitute(
         CExpr::IsNull(val) => substitute(val, match_exp, replace_with)
             .and_then(|sval| Ok(CExpr::IsNull(Box::from(sval)))),
         CExpr::Null(_) => Ok(exp.clone()),
-        CExpr::Sym(x) => {
+        CExpr::Id(x) => {
             if x == match_exp {
                 Ok(replace_with.clone())
             } else {
-                Ok(CExpr::Sym(x.clone()))
+                Ok(CExpr::Id(x.clone()))
             }
         }
         CExpr::Num(_) => Ok(exp.clone()),
@@ -453,7 +453,7 @@ fn get_free_vars(exp: &CExpr) -> Result<Vector<String>, ClosureConvertError> {
         CExpr::Cdr(val) => get_free_vars(val.as_ref()),
         CExpr::IsNull(val) => get_free_vars(val.as_ref()),
         CExpr::Null(_) => Ok(vector![]),
-        CExpr::Sym(x) => Ok(vector![x.clone()]),
+        CExpr::Id(x) => Ok(vector![x.clone()]),
         CExpr::Num(_) => Ok(vector![]),
         CExpr::Bool(_) => Ok(vector![]),
         CExpr::Str(_) => Ok(vector![]),
@@ -482,7 +482,7 @@ fn cc(exp: &Expr, env: &TypeEnv<CType>) -> Result<CExpr, ClosureConvertError> {
         Expr::Num(x) => Ok(CExpr::Num(*x)),
         Expr::Bool(x) => Ok(CExpr::Bool(*x)),
         Expr::Str(x) => Ok(CExpr::Str(x.clone())),
-        Expr::Sym(x) => Ok(CExpr::Sym(x.clone())),
+        Expr::Id(x) => Ok(CExpr::Id(x.clone())),
         Expr::Binop(op, arg1, arg2) => cc(arg1, env).and_then(|carg1| {
             cc(arg2, env)
                 .and_then(|carg2| Ok(CExpr::Binop(*op, Box::from(carg1), Box::from(carg2))))

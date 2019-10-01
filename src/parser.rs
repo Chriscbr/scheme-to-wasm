@@ -23,7 +23,7 @@ pub enum Expr {
     IsNull(Box<Expr>),
     Null(Type),
     FnApp(Box<Expr>, Vector<Expr>), // func, arguments
-    Sym(String),
+    Id(String),
     Num(i64),
     Bool(bool),
     Str(String),
@@ -499,7 +499,7 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
         lexpr::Value::Symbol(x) => match &x[..] {
             "true" => Ok(Expr::Bool(true)),
             "false" => Ok(Expr::Bool(false)),
-            symbol => Ok(Expr::Sym(symbol.to_string())),
+            symbol => Ok(Expr::Id(symbol.to_string())),
         },
         _ => Err(ParseError::from("Unrecognized form of expression found.")),
     }
