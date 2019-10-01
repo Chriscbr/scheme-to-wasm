@@ -33,6 +33,7 @@ fn test_closure_convert_lambda_no_free_vars() {
         )),
         Box::from(CExpr::Env(vector![])),
     );
+    println!("{}", expected_exp);
     assert_eq!(closure_convert(&parsed_exp).unwrap(), expected_exp);
 }
 
