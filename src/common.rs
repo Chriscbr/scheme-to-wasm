@@ -7,6 +7,37 @@ pub enum Type {
     Str,
     List(Box<Type>),
     Func(Vector<Type>, Box<Type>), // array of input types, and a return type
+    Unknown,                       // placeholder
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Int => write!(f, "int"),
+            Type::Bool => write!(f, "bool"),
+            Type::Str => write!(f, "string"),
+            Type::List(typ) => write!(f, "(list {})", typ),
+            Type::Func(in_typs, ret_typ) => {
+                // TODO: extract this to a function
+                let mut in_typs_str = String::new();
+                for typ in in_typs {
+                    in_typs_str.push_str(" ");
+                    in_typs_str.push_str(format!("{}", typ).as_str());
+                }
+                write!(f, "(-> {}{})", in_typs_str, ret_typ)
+            }
+            // // TODO: add existential types properly
+            // Type::Env(typs) => {
+            //     let mut typs_str = String::new();
+            //     for typ in typs {
+            //         typs_str.push_str(" ");
+            //         typs_str.push_str(format!("{}", typ).as_str());
+            //     }
+            //     write!(f, "(env ({}))", typs_str)
+            // }
+            Type::Unknown => write!(f, "unknown"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -27,6 +58,60 @@ pub enum Expr {
     Num(i64),
     Bool(bool),
     Str(String),
+}
+
+// TODO: Finish implementation
+impl std::fmt::Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Binop(op, exp1, exp2) => write!(f, "({} {} {})", op, exp1, exp2),
+            Expr::If(pred, cons, alt) => write!(f, "(if {} {} {})", pred, cons, alt),
+            Expr::Let(bindings, body) => {
+                let mut bindings_str = String::new();
+                for pair in bindings {
+                    bindings_str.push_str(format!("({} {})", pair.0, pair.1).as_str());
+                    bindings_str.push_str(" ");
+                }
+                bindings_str.pop();
+                write!(f, "(let ({}) {})", bindings_str, body)
+            }
+            Expr::Lambda(params, ret_type, body) => {
+                let mut params_str = String::new();
+                for pair in params {
+                    params_str.push_str(format!("({} : {})", pair.0, pair.1).as_str());
+                    params_str.push_str(" ");
+                }
+                params_str.pop();
+                write!(f, "(lambda ({}) : {} {})", params_str, ret_type, body)
+            }
+            Expr::FnApp(func, args) => {
+                let mut args_str = String::new();
+                for arg in args {
+                    args_str.push_str(" ");
+                    args_str.push_str(format!("{}", arg).as_str());
+                }
+                write!(f, "({}{})", func, args_str)
+            }
+            Expr::Begin(exps) => {
+                let mut exps_str = String::new();
+                for exp in exps {
+                    exps_str.push_str(" ");
+                    exps_str.push_str(format!("{}", exp).as_str());
+                }
+                write!(f, "({})", exps_str)
+            }
+            Expr::Set(var_name, exp) => write!(f, "(set! {} {})", var_name, exp),
+            Expr::Cons(first, second) => write!(f, "(cons {} {})", first, second),
+            Expr::Car(exp) => write!(f, "(car {})", exp),
+            Expr::Cdr(exp) => write!(f, "(cdr {})", exp),
+            Expr::IsNull(exp) => write!(f, "(null? {})", exp),
+            Expr::Null(typ) => write!(f, "(null {})", typ),
+            Expr::Id(val) => write!(f, "{}", val),
+            Expr::Num(val) => write!(f, "{}", val),
+            Expr::Bool(val) => write!(f, "{}", if *val { "true" } else { "false" }),
+            Expr::Str(val) => write!(f, "\"{}\"", val),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

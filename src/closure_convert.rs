@@ -59,35 +59,6 @@ pub enum CType {
     Unknown,
 }
 
-impl std::fmt::Display for CType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CType::Int => write!(f, "int"),
-            CType::Bool => write!(f, "bool"),
-            CType::Str => write!(f, "string"),
-            CType::List(typ) => write!(f, "(list {})", typ),
-            CType::Func(in_typs, ret_typ) => {
-                // TODO: extract this to a function
-                let mut in_typs_str = String::new();
-                for typ in in_typs {
-                    in_typs_str.push_str(" ");
-                    in_typs_str.push_str(format!("{}", typ).as_str());
-                }
-                write!(f, "(-> {}{})", in_typs_str, ret_typ)
-            }
-            CType::Env(typs) => {
-                let mut typs_str = String::new();
-                for typ in typs {
-                    typs_str.push_str(" ");
-                    typs_str.push_str(format!("{}", typ).as_str());
-                }
-                write!(f, "(env ({}))", typs_str)
-            }
-            CType::Unknown => write!(f, "unknown"),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 /// Represents a closure-converted expression.
 pub enum CExpr {
@@ -129,49 +100,6 @@ pub enum CExpr {
     Str(String),
 }
 
-// TODO: Finish implementation
-impl std::fmt::Display for CExpr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CExpr::Binop(op, exp1, exp2) => write!(f, "({} {} {})", op, exp1, exp2),
-            CExpr::If(pred, cons, alt) => write!(f, "(if {} {} {})", pred, cons, alt),
-            CExpr::Let(bindings, body) => write!(f, "(let UNIMPLEMENTED {})", body),
-            CExpr::Lambda(params, ret_type, body) => {
-                write!(f, "(lambda UNIMPLEMENTED : {} {})", ret_type, body)
-            }
-            CExpr::Closure(func, env) => write!(f, "(make-closure {} {})", func, env),
-            CExpr::ClosureApp(clos, args) => {
-                let mut args_str = String::new();
-                for arg in args {
-                    args_str.push_str(" ");
-                    args_str.push_str(format!("{}", arg).as_str());
-                }
-                write!(f, "(apply-closure {}{})", clos, args_str)
-            }
-            CExpr::Env(bindings) => write!(f, "(make-env UNIMPLEMENTED)"),
-            CExpr::EnvGet(env_name, key) => write!(f, "(env-ref {} {})", env_name, key),
-            CExpr::Begin(exps) => {
-                let mut exps_str = String::new();
-                for exp in exps {
-                    exps_str.push_str(" ");
-                    exps_str.push_str(format!("{}", exp).as_str());
-                }
-                write!(f, "({})", exps_str)
-            }
-            CExpr::Set(var_name, exp) => write!(f, "(set! {} {})", var_name, exp),
-            CExpr::Cons(first, second) => write!(f, "(cons {} {})", first, second),
-            CExpr::Car(exp) => write!(f, "(car {})", exp),
-            CExpr::Cdr(exp) => write!(f, "(cdr {})", exp),
-            CExpr::IsNull(exp) => write!(f, "(null? {})", exp),
-            CExpr::Null(typ) => write!(f, "(null {})", typ),
-            CExpr::Id(val) => write!(f, "{}", val),
-            CExpr::Num(val) => write!(f, "{}", val),
-            CExpr::Bool(val) => write!(f, "{}", if true { "true" } else { "false" }),
-            CExpr::Str(val) => write!(f, "\"{}\"", val),
-        }
-    }
-}
-
 fn cc_type(typ: &Type) -> Result<CType, ClosureConvertError> {
     match typ {
         Type::Int => Ok(CType::Int),
@@ -187,6 +115,7 @@ fn cc_type(typ: &Type) -> Result<CType, ClosureConvertError> {
                     .and_then(|cret_type| Ok(CType::Func(carg_types, Box::from(cret_type))))
             })
         }
+        Type::Unknown => Ok(CType::Unknown),
     }
 }
 
