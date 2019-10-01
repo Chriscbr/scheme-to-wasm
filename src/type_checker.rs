@@ -1,5 +1,4 @@
-use crate::common::TypeEnv;
-use crate::parser::{BinOp, Expr, Type};
+use crate::common::{BinOp, Expr, Type, TypeEnv};
 use im_rc::Vector;
 
 #[derive(Clone, Debug)]

@@ -1,5 +1,4 @@
-use crate::common::TypeEnv;
-use crate::parser::{BinOp, Expr, Type};
+use crate::common::{BinOp, Expr, Type, TypeEnv};
 use crate::type_checker::type_check;
 use im_rc::{vector, Vector};
 use std::sync::atomic::{AtomicU64, Ordering};

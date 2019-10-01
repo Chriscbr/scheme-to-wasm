@@ -1,6 +1,6 @@
 use im_rc::vector;
-use scheme_to_rust::common::TypeEnv;
-use scheme_to_rust::parser::{parse, Type};
+use scheme_to_rust::common::{Type, TypeEnv};
+use scheme_to_rust::parser::parse;
 use scheme_to_rust::type_checker::{tc_with_env, type_check};
 
 #[test]
