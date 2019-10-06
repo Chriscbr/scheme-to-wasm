@@ -7,6 +7,7 @@ pub enum Type {
     Str,
     List(Box<Type>),
     Func(Vector<Type>, Box<Type>), // array of input types, and a return type
+    Tuple(Vector<Type>),           // array of types
     Unknown,                       // placeholder
 }
 
@@ -25,6 +26,14 @@ impl std::fmt::Display for Type {
                     in_typs_str.push_str(format!("{}", typ).as_str());
                 }
                 write!(f, "(-> {}{})", in_typs_str, ret_typ)
+            }
+            Type::Tuple(typs) => {
+                let mut typs_str = String::new();
+                for typ in typs {
+                    typs_str.push_str(" ");
+                    typs_str.push_str(format!("{}", typ).as_str());
+                }
+                write!(f, "(tuple{})", typs_str)
             }
             // // TODO: add existential types properly
             // Type::Env(typs) => {
@@ -54,6 +63,8 @@ pub enum Expr {
     IsNull(Box<Expr>),
     Null(Type),
     FnApp(Box<Expr>, Vector<Expr>), // func, arguments
+    Tuple(Vector<Expr>, Type),      // list of expressions, type annotation
+    TupleGet(Box<Expr>, Box<Expr>), // env, index - index must explicitly be a number
     Id(String),
     Num(i64),
     Bool(bool),
@@ -106,6 +117,15 @@ impl std::fmt::Display for Expr {
             Expr::Cdr(exp) => write!(f, "(cdr {})", exp),
             Expr::IsNull(exp) => write!(f, "(null? {})", exp),
             Expr::Null(typ) => write!(f, "(null {})", typ),
+            Expr::Tuple(exps, typ) => {
+                let mut exps_str = String::new();
+                for exp in exps {
+                    exps_str.push_str(" ");
+                    exps_str.push_str(format!("{}", exp).as_str());
+                }
+                write!(f, "(make-tuple {} : {})", exps_str, typ)
+            }
+            Expr::TupleGet(tup, key) => write!(f, "(get-nth {} {})", tup, key),
             Expr::Id(val) => write!(f, "{}", val),
             Expr::Num(val) => write!(f, "{}", val),
             Expr::Bool(val) => write!(f, "{}", if *val { "true" } else { "false" }),

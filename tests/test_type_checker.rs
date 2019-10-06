@@ -173,6 +173,61 @@ fn test_typecheck_lists_sad() {
 }
 
 #[test]
+fn test_typecheck_tuples_happy() {
+    let exp = lexpr::from_str(r#"(make-tuple (3 "hello") : (tuple int string))"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(
+        type_check(&exp).unwrap(),
+        Type::Tuple(vector![Type::Int, Type::Str])
+    );
+
+    let exp =
+        lexpr::from_str(r#"(get-nth (make-tuple (3 "hello") : (tuple int string)) 0)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+    let exp =
+        lexpr::from_str(r#"(get-nth (make-tuple (3 "hello") : (tuple int string)) 1)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), Type::Str);
+}
+
+#[test]
+fn test_typecheck_tuples_sad() {
+    // types do not match
+    let exp = lexpr::from_str(r#"(make-tuple (3 "hello") : (tuple bool string))"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    // too few types
+    let exp = lexpr::from_str(r#"(make-tuple (3 "hello") : (tuple int))"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    // too too many types
+    let exp = lexpr::from_str(r#"(make-tuple (3 "hello") : (tuple int string bool))"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    // key too large
+    let exp =
+        lexpr::from_str(r#"(get-nth (make-tuple (3 "hello") : (tuple int string)) 2)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    // key is not a number
+    let exp =
+        lexpr::from_str(r#"(get-nth (make-tuple (3 "hello") : (tuple int string)) true)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    // first expression is not a tuple
+    let exp = lexpr::from_str(r#"(get-nth (cons 3 (null int)) 0)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+}
+
+#[test]
 fn test_typecheck_let_happy() {
     let exp = lexpr::from_str("(let ((x 23)) (+ x 24))").unwrap();
     let exp = parse(&exp).unwrap();

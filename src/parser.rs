@@ -29,7 +29,7 @@ impl std::error::Error for ParseError {
 // Helper functions
 //
 
-fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
+fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
     match annotation {
         lexpr::Value::Symbol(val) => match val.as_ref() {
             "int" => Ok(Type::Int),
@@ -40,14 +40,9 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseEr
             )),
         },
         lexpr::Value::Cons(_) => {
-            // an array, ex. [Symbol(->), Symbol(int), Symbol(int), Symbol(bool)]
             let lst_vec = match annotation.to_vec() {
                 Some(vec) => vec,
-                None => {
-                    return Err(ParseError::from(
-                        "Type annotation for function is not a valid list.",
-                    ))
-                }
+                None => return Err(ParseError::from("Type annotation is not a valid list.")),
             };
             // ensure that the function annotation has at least -> and a return type as elements
             if lst_vec.is_empty() {
@@ -63,14 +58,13 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseEr
                     let input_types: Result<Vec<Type>, ParseError> = lst_vec
                         [1..(lst_vec.len() - 1)]
                         .iter()
-                        .map(|val| convert_annotation_to_type(val))
+                        .map(|val| parse_type(val))
                         .collect();
                     let input_types_unwrapped = match input_types {
                         Ok(val) => val,
                         Err(e) => return Err(e),
                     };
-                    let return_type = match convert_annotation_to_type(&lst_vec[lst_vec.len() - 1])
-                    {
+                    let return_type = match parse_type(&lst_vec[lst_vec.len() - 1]) {
                         Ok(val) => val,
                         Err(e) => return Err(e),
                     };
@@ -85,14 +79,25 @@ fn convert_annotation_to_type(annotation: &lexpr::Value) -> Result<Type, ParseEr
                             "Type annotation for list has incorrect number of values.",
                         ));
                     }
-                    let lst_type = match convert_annotation_to_type(&lst_vec[1]) {
+                    let lst_type = match parse_type(&lst_vec[1]) {
                         Ok(typ) => typ,
                         Err(e) => return Err(e),
                     };
                     Ok(Type::List(Box::from(lst_type)))
                 }
+                Some("tuple") => {
+                    let tuple_types: Result<Vec<Type>, ParseError> = lst_vec[1..(lst_vec.len())]
+                        .iter()
+                        .map(|val| parse_type(val))
+                        .collect();
+                    let tuple_types_unwrapped = match tuple_types {
+                        Ok(val) => val,
+                        Err(e) => return Err(e),
+                    };
+                    Ok(Type::Tuple(Vector::from(tuple_types_unwrapped)))
+                }
                 _ => Err(ParseError::from(
-                    r#"Type annotation for function does not have "->" or "list" as first symbol."#,
+                    r#"Type annotation does not have "->", "tuple", or "list" as first symbol."#,
                 )),
             }
         }
@@ -148,7 +153,7 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, Par
                     ))
                 }
             };
-            let arg_type = match convert_annotation_to_type(&arg_vec[2]) {
+            let arg_type = match parse_type(&arg_vec[2]) {
                 Ok(typ) => typ,
                 Err(e) => return Err(e),
             };
@@ -281,7 +286,7 @@ fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     }
 
     // get the (annotated) return type
-    let ret_type = match convert_annotation_to_type(&rest[2]) {
+    let ret_type = match parse_type(&rest[2]) {
         Ok(typ) => typ,
         Err(e) => return Err(e),
     };
@@ -368,7 +373,7 @@ fn parse_is_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
 
 fn parse_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     if rest.len() == 1 {
-        match convert_annotation_to_type(&rest[0]) {
+        match parse_type(&rest[0]) {
             Ok(typ) => Ok(Expr::Null(typ)),
             Err(e) => Err(e),
         }
@@ -389,6 +394,53 @@ fn parse_func(first: &lexpr::Value, rest: &[lexpr::Value]) -> Result<Expr, Parse
         Err(e) => return Err(e),
     };
     Ok(Expr::FnApp(Box::from(func), args))
+}
+
+fn parse_make_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 3 {
+        let vals = match rest[0].to_vec() {
+            Some(val) => match parse_array(&val) {
+                Ok(arr) => arr,
+                Err(e) => return Err(e),
+            },
+            None => {
+                return Err(ParseError::from(
+                    "First argument in make-tuple expression is not a list.",
+                ))
+            }
+        };
+        // check there is a separator
+        let separator = match rest[1].as_symbol() {
+            Some(val) => val,
+            None => return Err(ParseError::from("Lambda expression does not have a separator between the arguments list and return type.")),
+        };
+        if separator != ":" {
+            return Err(ParseError::from("Lambda expression does not have the correct separator : between the arguments list and return type."));
+        }
+
+        let typ = match parse_type(&rest[2]) {
+            Ok(val) => val,
+            Err(e) => return Err(e),
+        };
+
+        Ok(Expr::Tuple(vals, typ))
+    } else {
+        Err(ParseError::from(
+            "Make-tuple expression has incorrect number of arguments.",
+        ))
+    }
+}
+
+fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 2 {
+        parse(&rest[0]).and_then(|env| {
+            parse(&rest[1]).and_then(|key| Ok(Expr::TupleGet(Box::from(env), Box::from(key))))
+        })
+    } else {
+        Err(ParseError::from(
+            "get-n expression has incorrect number of arguments.",
+        ))
+    }
 }
 
 pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
@@ -428,6 +480,8 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                     "cdr" => parse_cdr(&rest),
                     "null?" => parse_is_null(&rest),
                     "null" => parse_null(&rest),
+                    "make-tuple" => parse_make_tuple(&rest),
+                    "get-nth" => parse_get_tuple(&rest),
                     _ => parse_func(&first, &rest),
                 },
                 None => parse_func(&first, &rest),
@@ -448,49 +502,58 @@ mod tests {
     use im_rc::vector;
 
     #[test]
-    fn test_convert_annotations() {
+    fn test_parse_type() {
         let exp = lexpr::from_str("int").unwrap();
-        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Int);
+        assert_eq!(parse_type(&exp).unwrap(), Type::Int);
 
         let exp = lexpr::from_str("bool").unwrap();
-        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Bool);
+        assert_eq!(parse_type(&exp).unwrap(), Type::Bool);
 
         let exp = lexpr::from_str("string").unwrap();
-        assert_eq!(convert_annotation_to_type(&exp).unwrap(), Type::Str);
+        assert_eq!(parse_type(&exp).unwrap(), Type::Str);
 
         let exp = lexpr::from_str("(list int)").unwrap();
-        assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
-            Type::List(Box::from(Type::Int))
-        );
+        assert_eq!(parse_type(&exp).unwrap(), Type::List(Box::from(Type::Int)));
 
         let exp = lexpr::from_str("(list (list int))").unwrap();
         assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
+            parse_type(&exp).unwrap(),
             Type::List(Box::from(Type::List(Box::from(Type::Int))))
+        );
+
+        let exp = lexpr::from_str("(tuple)").unwrap();
+        assert_eq!(parse_type(&exp).unwrap(), Type::Tuple(vector![]));
+
+        let exp = lexpr::from_str("(tuple int)").unwrap();
+        assert_eq!(parse_type(&exp).unwrap(), Type::Tuple(vector![Type::Int]));
+
+        let exp = lexpr::from_str("(tuple int string)").unwrap();
+        assert_eq!(
+            parse_type(&exp).unwrap(),
+            Type::Tuple(vector![Type::Int, Type::Str])
         );
 
         let exp = lexpr::from_str("(-> int)").unwrap();
         assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
+            parse_type(&exp).unwrap(),
             Type::Func(vector![], Box::from(Type::Int))
         );
 
         let exp = lexpr::from_str("(-> int int)").unwrap();
         assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
+            parse_type(&exp).unwrap(),
             Type::Func(vector![Type::Int], Box::from(Type::Int))
         );
 
         let exp = lexpr::from_str("(-> string int bool)").unwrap();
         assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
+            parse_type(&exp).unwrap(),
             Type::Func(vector![Type::Str, Type::Int], Box::from(Type::Bool))
         );
 
         let exp = lexpr::from_str("(-> (-> int int bool) int int bool)").unwrap();
         assert_eq!(
-            convert_annotation_to_type(&exp).unwrap(),
+            parse_type(&exp).unwrap(),
             Type::Func(
                 vector![
                     Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Bool)),

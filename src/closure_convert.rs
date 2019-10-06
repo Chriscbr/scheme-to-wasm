@@ -406,6 +406,8 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<CExpr, ClosureConvertError> {
         Expr::Cdr(val) => cc(val, env).and_then(|cval| Ok(CExpr::Cdr(Box::from(cval)))),
         Expr::IsNull(val) => cc(val, env).and_then(|cval| Ok(CExpr::IsNull(Box::from(cval)))),
         Expr::Null(typ) => Ok(CExpr::Null(typ.clone())),
+        Expr::Tuple(_, _) => Err(ClosureConvertError::from("Unimplemented.")),
+        Expr::TupleGet(_, _) => Err(ClosureConvertError::from("Unimplemented.")),
         Expr::FnApp(func, args) => {
             let cargs: Vector<CExpr> = match args.iter().map(|arg| cc(&arg, env)).collect() {
                 Ok(val) => val,

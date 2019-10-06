@@ -69,7 +69,7 @@ fn check_lambda_type_with_inputs(
 //
 
 fn tc_binop_with_env(
-    op: &BinOp,
+    op: BinOp,
     arg1: &Expr,
     arg2: &Expr,
     env: &mut TypeEnv<Type>,
@@ -279,6 +279,48 @@ fn tc_cdr_with_env(exp: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeChec
     }
 }
 
+fn tc_tuple_with_env(
+    exps: &Vector<Expr>,
+    expected_typ: &Type,
+    env: &mut TypeEnv<Type>,
+) -> Result<Type, TypeCheckError> {
+    tc_array_with_env(exps, env).and_then(|typs| {
+        if Type::Tuple(typs.clone()) == *expected_typ {
+            Ok(Type::Tuple(typs.clone()))
+        } else {
+            Err(TypeCheckError::from(
+                "Tuple values do not match provided type ascription.",
+            ))
+        }
+    })
+}
+
+fn tc_tuple_get_with_env(
+    tup: &Expr,
+    key: &Expr,
+    env: &mut TypeEnv<Type>,
+) -> Result<Type, TypeCheckError> {
+    tc_with_env(tup, env).and_then(|tup_typ| match tup_typ {
+        Type::Tuple(vec) => match key {
+            Expr::Num(x) => {
+                if (*x as usize) < vec.len() {
+                    Ok(vec[*x as usize].clone())
+                } else {
+                    Err(TypeCheckError::from(
+                        "Value in get-n is too large for the provided tuple.",
+                    ))
+                }
+            }
+            _ => Err(TypeCheckError::from(
+                "Second expression in get-n is not a number.",
+            )),
+        },
+        _ => Err(TypeCheckError::from(
+            "First expression in get-n is not a tuple.",
+        )),
+    })
+}
+
 fn tc_apply_with_env(
     func: &Expr,
     args: &Vector<Expr>,
@@ -320,7 +362,7 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
             Some(val) => Ok(val.clone()),
             None => Err(TypeCheckError::from("Not a recognized function name.")),
         },
-        Expr::Binop(op, arg1, arg2) => tc_binop_with_env(&op, arg1, arg2, env),
+        Expr::Binop(op, arg1, arg2) => tc_binop_with_env(*op, arg1, arg2, env),
         Expr::If(pred, cons, alt) => tc_if_with_env(pred, cons, alt, env),
         Expr::Let(bindings, body) => tc_let_with_env(bindings, body, env),
         Expr::Lambda(params, ret_typ, body) => tc_lambda_with_env(params, ret_typ, body, env),
@@ -331,6 +373,8 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
         Expr::Cdr(exp) => tc_cdr_with_env(exp, env),
         Expr::IsNull(exp) => tc_is_null_with_env(exp, env),
         Expr::Null(typ) => Ok(Type::List(Box::from(typ.clone()))),
+        Expr::Tuple(exps, typ) => tc_tuple_with_env(exps, typ, env),
+        Expr::TupleGet(tup, key) => tc_tuple_get_with_env(tup, key, env),
         Expr::FnApp(func, args) => tc_apply_with_env(func, args, env),
     }
 }
