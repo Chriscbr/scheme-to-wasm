@@ -2,10 +2,8 @@
 extern crate lazy_static; // 1.0.2
 
 use im_rc::vector;
-use scheme_to_rust::closure_convert::{
-    closure_convert, dangerously_reset_gensym_count, CExpr, CType,
-};
-use scheme_to_rust::common::BinOp;
+use scheme_to_rust::closure_convert::{closure_convert, dangerously_reset_gensym_count, CExpr};
+use scheme_to_rust::common::{BinOp, Type};
 use scheme_to_rust::parser::parse;
 use std::sync::Mutex;
 
@@ -22,10 +20,10 @@ fn test_closure_convert_lambda_no_free_vars() {
     let expected_exp = CExpr::Closure(
         Box::from(CExpr::Lambda(
             vector![
-                (String::from("env0"), CType::Env(vector![])),
-                (String::from("x"), CType::Int)
+                (String::from("env0"), Type::Unknown),
+                (String::from("x"), Type::Int)
             ],
-            CType::Int,
+            Type::Int,
             Box::from(CExpr::Binop(
                 BinOp::Add,
                 Box::from(CExpr::Id(String::from("x"))),
@@ -48,10 +46,10 @@ fn test_closure_convert_lambda_yes_free_vars() {
         Box::from(CExpr::Closure(
             Box::from(CExpr::Lambda(
                 vector![
-                    (String::from("env0"), CType::Env(vector![CType::Int])),
-                    (String::from("x"), CType::Int)
+                    (String::from("env0"), Type::Unknown),
+                    (String::from("x"), Type::Int)
                 ],
-                CType::Int,
+                Type::Int,
                 Box::from(CExpr::Binop(
                     BinOp::Add,
                     Box::from(CExpr::Id(String::from("x"))),

@@ -49,17 +49,6 @@ impl std::error::Error for ClosureConvertError {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum CType {
-    Int,
-    Bool,
-    Str,
-    List(Box<CType>),
-    Func(Vector<CType>, Box<CType>), // array of input types, and a return type
-    Env(Vector<CType>),
-    Unknown,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 /// Represents a closure-converted expression.
 pub enum CExpr {
     // operator, arg1, arg2
@@ -72,7 +61,7 @@ pub enum CExpr {
     Let(Vector<(String, CExpr)>, Box<CExpr>),
 
     // arg names/types (environment should be first argument), return type, body
-    Lambda(Vector<(String, CType)>, CType, Box<CExpr>),
+    Lambda(Vector<(String, Type)>, Type, Box<CExpr>),
 
     // lambda, environment
     Closure(Box<CExpr>, Box<CExpr>),
@@ -92,7 +81,7 @@ pub enum CExpr {
     Car(Box<CExpr>),
     Cdr(Box<CExpr>),
     IsNull(Box<CExpr>),
-    Null(CType),
+    Null(Type),
 
     Id(String),
     Num(i64),
@@ -100,28 +89,9 @@ pub enum CExpr {
     Str(String),
 }
 
-fn cc_type(typ: &Type) -> Result<CType, ClosureConvertError> {
-    match typ {
-        Type::Int => Ok(CType::Int),
-        Type::Bool => Ok(CType::Bool),
-        Type::Str => Ok(CType::Str),
-        Type::List(x) => cc_type(x).and_then(|ctype| Ok(CType::List(Box::from(ctype)))),
-        Type::Func(arg_types, ret_type) => {
-            let carg_types: Result<Vector<CType>, ClosureConvertError> =
-                arg_types.iter().map(|arg_typ| cc_type(arg_typ)).collect();
-
-            carg_types.and_then(|carg_types| {
-                cc_type(ret_type.as_ref())
-                    .and_then(|cret_type| Ok(CType::Func(carg_types, Box::from(cret_type))))
-            })
-        }
-        Type::Unknown => Ok(CType::Unknown),
-    }
-}
-
 fn cc_bindings(
     bindings: &Vector<(String, Expr)>,
-    env: &TypeEnv<CType>,
+    env: &TypeEnv<Type>,
 ) -> Result<Vector<(String, CExpr)>, ClosureConvertError> {
     bindings
         .iter()
@@ -133,40 +103,14 @@ fn cc_lambda(
     params: &Vector<(String, Type)>,
     ret_type: &Type,
     body: &Expr,
-    env: &TypeEnv<CType>,
+    env: &TypeEnv<Type>,
 ) -> Result<CExpr, ClosureConvertError> {
-    // Constructing the parameter list for the new lambda expression
-    // Start with converting Type -> CType
-    let new_params: Result<Vector<(String, CType)>, ClosureConvertError> = params
-        .iter()
-        .map(|pair| cc_type(&pair.1).and_then(|cparam_type| Ok((pair.0.clone(), cparam_type))))
-        .collect();
-    // Unwrap result
-    let mut new_params: Vector<(String, CType)> = match new_params {
+    let cbody = match cc(body, &env.add_bindings(params.clone())) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
 
-    let cbody = match cc(body, &env.add_bindings(new_params.clone())) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
-
-    let free_vars = match get_free_vars_lambda(&new_params, &cbody) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
-
-    let free_var_types: Vector<CType> = match free_vars
-        .iter()
-        .map(|x| match env.find(x) {
-            Some(val) => Ok(val.clone()),
-            None => Err(ClosureConvertError::from(
-                "Free variable found, environment cannot be constructed with proper type.",
-            )),
-        })
-        .collect()
-    {
+    let free_vars = match get_free_vars_lambda(&params, &cbody) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
@@ -175,7 +119,8 @@ fn cc_lambda(
     let env_name: String = generate_env_name();
 
     // Add environment to beginning of parameter list
-    new_params.push_front((env_name.clone(), CType::Env(free_var_types)));
+    let mut new_params = params.clone();
+    new_params.push_front((env_name.clone(), Type::Unknown));
 
     // (x, Id(x)) (y, Id(y)) ...
     let env_contents: Vector<(String, CExpr)> = free_vars
@@ -197,12 +142,12 @@ fn cc_lambda(
             Err(e) => return Err(e),
         };
     }
-    let cret_type: CType = match cc_type(ret_type) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
     Ok(CExpr::Closure(
-        Box::from(CExpr::Lambda(new_params, cret_type, Box::from(new_body))),
+        Box::from(CExpr::Lambda(
+            new_params,
+            ret_type.clone(),
+            Box::from(new_body),
+        )),
         Box::from(env_exp),
     ))
 }
@@ -389,7 +334,7 @@ fn get_free_vars(exp: &CExpr) -> Result<Vector<String>, ClosureConvertError> {
 }
 
 fn get_free_vars_lambda(
-    params: &Vector<(String, CType)>,
+    params: &Vector<(String, Type)>,
     body: &CExpr,
 ) -> Result<Vector<String>, ClosureConvertError> {
     let param_vars: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
@@ -405,7 +350,7 @@ pub fn closure_convert(exp: &Expr) -> Result<CExpr, ClosureConvertError> {
     cc(exp, &TypeEnv::new())
 }
 
-fn cc(exp: &Expr, env: &TypeEnv<CType>) -> Result<CExpr, ClosureConvertError> {
+fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<CExpr, ClosureConvertError> {
     match exp {
         Expr::Num(x) => Ok(CExpr::Num(*x)),
         Expr::Bool(x) => Ok(CExpr::Bool(*x)),
@@ -427,12 +372,10 @@ fn cc(exp: &Expr, env: &TypeEnv<CType>) -> Result<CExpr, ClosureConvertError> {
             })
         }),
         Expr::Let(bindings, body) => {
-            let binding_type_map: Vector<(String, CType)> = match bindings
+            let binding_type_map: Vector<(String, Type)> = match bindings
                 .iter()
                 .map(|pair| match type_check(&pair.1) {
-                    Ok(exp_typ) => {
-                        cc_type(&exp_typ).and_then(|cexp_typ| Ok((pair.0.clone(), cexp_typ)))
-                    }
+                    Ok(exp_typ) => Ok((pair.0.clone(), exp_typ)),
                     Err(e) => Err(ClosureConvertError::from(
                         format!("Type checking error during closure conversion: {}", e).as_str(),
                     )),
@@ -462,7 +405,7 @@ fn cc(exp: &Expr, env: &TypeEnv<CType>) -> Result<CExpr, ClosureConvertError> {
         Expr::Car(val) => cc(val, env).and_then(|cval| Ok(CExpr::Car(Box::from(cval)))),
         Expr::Cdr(val) => cc(val, env).and_then(|cval| Ok(CExpr::Cdr(Box::from(cval)))),
         Expr::IsNull(val) => cc(val, env).and_then(|cval| Ok(CExpr::IsNull(Box::from(cval)))),
-        Expr::Null(typ) => cc_type(typ).and_then(|ctyp| Ok(CExpr::Null(ctyp))),
+        Expr::Null(typ) => Ok(CExpr::Null(typ.clone())),
         Expr::FnApp(func, args) => {
             let cargs: Vector<CExpr> = match args.iter().map(|arg| cc(&arg, env)).collect() {
                 Ok(val) => val,
