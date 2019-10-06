@@ -62,9 +62,9 @@ pub enum Expr {
     Cdr(Box<Expr>),
     IsNull(Box<Expr>),
     Null(Type),
-    FnApp(Box<Expr>, Vector<Expr>), // func, arguments
-    Tuple(Vector<Expr>, Type),      // list of expressions, type annotation
-    TupleGet(Box<Expr>, Box<Expr>), // env, index - index must explicitly be a number
+    FnApp(Box<Expr>, Vector<Expr>),    // func, arguments
+    Tuple(Vector<Expr>, Vector<Type>), // list of expressions, type annotation
+    TupleGet(Box<Expr>, Box<Expr>),    // env, index - index must explicitly be a number
     Id(String),
     Num(i64),
     Bool(bool),
@@ -92,7 +92,9 @@ impl std::fmt::Display for Expr {
                     params_str.push_str(format!("({} : {})", pair.0, pair.1).as_str());
                     params_str.push_str(" ");
                 }
-                params_str.pop();
+                if params.len() > 0 {
+                    params_str.pop();
+                }
                 write!(f, "(lambda ({}) : {} {})", params_str, ret_type, body)
             }
             Expr::FnApp(func, args) => {
@@ -117,13 +119,21 @@ impl std::fmt::Display for Expr {
             Expr::Cdr(exp) => write!(f, "(cdr {})", exp),
             Expr::IsNull(exp) => write!(f, "(null? {})", exp),
             Expr::Null(typ) => write!(f, "(null {})", typ),
-            Expr::Tuple(exps, typ) => {
+            Expr::Tuple(exps, typs) => {
                 let mut exps_str = String::new();
                 for exp in exps {
                     exps_str.push_str(" ");
                     exps_str.push_str(format!("{}", exp).as_str());
                 }
-                write!(f, "(make-tuple {} : {})", exps_str, typ)
+                let mut typs_str = String::new();
+                for typ in typs {
+                    typs_str.push_str(format!("{}", typ).as_str());
+                    typs_str.push_str(" ")
+                }
+                if typs.len() > 0 {
+                    typs_str.pop();
+                }
+                write!(f, "(make-tuple{} : ({}))", exps_str, typs_str)
             }
             Expr::TupleGet(tup, key) => write!(f, "(get-nth {} {})", tup, key),
             Expr::Id(val) => write!(f, "{}", val),

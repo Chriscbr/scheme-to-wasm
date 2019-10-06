@@ -281,11 +281,11 @@ fn tc_cdr_with_env(exp: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeChec
 
 fn tc_tuple_with_env(
     exps: &Vector<Expr>,
-    expected_typ: &Type,
+    expected_typs: &Vector<Type>,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
     tc_array_with_env(exps, env).and_then(|typs| {
-        if Type::Tuple(typs.clone()) == *expected_typ {
+        if typs == *expected_typs {
             Ok(Type::Tuple(typs.clone()))
         } else {
             Err(TypeCheckError::from(
@@ -373,7 +373,7 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
         Expr::Cdr(exp) => tc_cdr_with_env(exp, env),
         Expr::IsNull(exp) => tc_is_null_with_env(exp, env),
         Expr::Null(typ) => Ok(Type::List(Box::from(typ.clone()))),
-        Expr::Tuple(exps, typ) => tc_tuple_with_env(exps, typ, env),
+        Expr::Tuple(exps, typs) => tc_tuple_with_env(exps, typs, env),
         Expr::TupleGet(tup, key) => tc_tuple_get_with_env(tup, key, env),
         Expr::FnApp(func, args) => tc_apply_with_env(func, args, env),
     }
