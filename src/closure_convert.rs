@@ -154,7 +154,7 @@ fn cc_lambda(
 
 fn substitute_array(
     exps: &Vector<CExpr>,
-    match_exp: &String,
+    match_exp: &str,
     replace_with: &CExpr,
 ) -> Result<Vector<CExpr>, ClosureConvertError> {
     exps.iter()
@@ -164,7 +164,7 @@ fn substitute_array(
 
 fn substitute(
     exp: &CExpr,
-    match_exp: &String,
+    match_exp: &str,
     replace_with: &CExpr,
 ) -> Result<CExpr, ClosureConvertError> {
     match exp {
@@ -202,7 +202,7 @@ fn substitute(
         }
         CExpr::Lambda(params, ret_type, body) => {
             let param_names: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
-            if !param_names.contains(match_exp) {
+            if !param_names.contains(&String::from(match_exp)) {
                 let sbody = match substitute(body, match_exp, replace_with) {
                     Ok(val) => val,
                     Err(e) => return Err(e),
