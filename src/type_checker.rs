@@ -386,15 +386,27 @@ fn type_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Result<Typ
 }
 
 fn tc_pack_with_env(
-    exp: &Expr,
+    packed_exp: &Expr,
     sub: &Type,
     exist: &Type,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    if let Type::Exists(type_var, typ) = exist {
-        // substitute "sub" (some type) for all occurrences of type_var (the quantified type) in exist
-        // then check if it
-        unimplemented!()
+    if let Type::Exists(type_var, base_typ) = exist {
+        // substitute "sub" for all occurrences of type_var (the quantified type) in exist
+        let substituted_type = match type_substitute(base_typ, *type_var, sub) {
+            Ok(val) => val,
+            Err(e) => return Err(e),
+        };
+        // now check if the type of "substituted" matches the type of the packed expression
+        tc_with_env(packed_exp, env).and_then(|packed_type| {
+            if dbg!(packed_type) == dbg!(substituted_type) {
+                Ok(exist.clone())
+            } else {
+                Err(TypeCheckError::from(
+                    "Packed expression does not match existential type.",
+                ))
+            }
+        })
     } else {
         Err(TypeCheckError::from(
             "Second argument in pack is not an existential type.",

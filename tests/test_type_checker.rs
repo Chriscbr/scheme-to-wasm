@@ -1,6 +1,6 @@
 use im_rc::vector;
 use scheme_to_rust::common::{Type, TypeEnv};
-use scheme_to_rust::parser::parse;
+use scheme_to_rust::parser::{parse, parse_type};
 use scheme_to_rust::type_checker::{tc_with_env, type_check};
 
 #[test]
@@ -452,4 +452,24 @@ fn test_type_check_apply_sad() {
     let exp = lexpr::from_str("((lambda ((x : int)) : bool (< x 5)) true)").unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).is_err(), true);
+}
+
+#[test]
+fn test_type_check_pack_happy() {
+    let exp = parse(
+        &lexpr::from_str("(pack (lambda ((x : int)) : int (+ x 1)) int (exists T0 (-> T0 T0)))")
+            .unwrap(),
+    )
+    .unwrap();
+    let expected_type = parse_type(&lexpr::from_str("(exists T0 (-> T0 T0))").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), expected_type,);
+
+    // slightly more specific type ascription
+    let exp = parse(
+        &lexpr::from_str("(pack (lambda ((x : int)) : int (+ x 1)) int (exists T0 (-> T0 int)))")
+            .unwrap(),
+    )
+    .unwrap();
+    let expected_type = parse_type(&lexpr::from_str("(exists T0 (-> T0 int))").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), expected_type,);
 }

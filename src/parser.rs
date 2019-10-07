@@ -29,7 +29,7 @@ impl std::error::Error for ParseError {
 // Helper functions
 //
 
-fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
+pub fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
     match annotation {
         lexpr::Value::Symbol(val) => match val.as_ref() {
             "int" => Ok(Type::Int),
@@ -62,60 +62,77 @@ fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
                 return Err(ParseError::from("Type annotation is missing values."));
             }
             match lst_vec[0].as_symbol() {
-                Some("->") => {
-                    if lst_vec.len() < 2 {
-                        return Err(ParseError::from(
-                            "Type annotation for function is missing values.",
-                        ));
-                    }
-                    let input_types: Result<Vec<Type>, ParseError> = lst_vec
-                        [1..(lst_vec.len() - 1)]
-                        .iter()
-                        .map(|val| parse_type(val))
-                        .collect();
-                    let input_types_unwrapped = match input_types {
-                        Ok(val) => val,
-                        Err(e) => return Err(e),
-                    };
-                    let return_type = match parse_type(&lst_vec[lst_vec.len() - 1]) {
-                        Ok(val) => val,
-                        Err(e) => return Err(e),
-                    };
-                    Ok(Type::Func(
-                        Vector::from(input_types_unwrapped),
-                        Box::from(return_type),
-                    ))
-                }
-                Some("list") => {
-                    if lst_vec.len() != 2 {
-                        return Err(ParseError::from(
-                            "Type annotation for list has incorrect number of values.",
-                        ));
-                    }
-                    let lst_type = match parse_type(&lst_vec[1]) {
-                        Ok(typ) => typ,
-                        Err(e) => return Err(e),
-                    };
-                    Ok(Type::List(Box::from(lst_type)))
-                }
-                Some("tuple") => {
-                    let tuple_types: Result<Vec<Type>, ParseError> = lst_vec[1..(lst_vec.len())]
-                        .iter()
-                        .map(|val| parse_type(val))
-                        .collect();
-                    let tuple_types_unwrapped = match tuple_types {
-                        Ok(val) => val,
-                        Err(e) => return Err(e),
-                    };
-                    Ok(Type::Tuple(Vector::from(tuple_types_unwrapped)))
-                }
-                Some("exists") => {
-                    if lst_vec.len() != 3 {
-                        return Err(ParseError::from(
-                            "Type annotation for existential type has incorrect number of values.",
-                        ));
-                    }
-                    let type_var = match lst_vec[1].as_name() {
+                Some("->") => parse_func_annotation(lst_vec),
+                Some("list") => parse_list_annotation(lst_vec),
+                Some("tuple") => parse_tuple_annotation(lst_vec),
+                Some("exists") => parse_exists_annotation(lst_vec),
+                _ => Err(ParseError::from(
+                    r#"Type annotation does not have "->", "tuple", or "list" as first symbol."#,
+                )),
+            }
+        }
+        _ => Err(ParseError::from(
+            "Type annotation is invalid or is missing.",
+        )),
+    }
+}
+
+fn parse_func_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
+    if lst_vec.len() < 2 {
+        return Err(ParseError::from(
+            "Type annotation for function is missing values.",
+        ));
+    }
+    let input_types: Result<Vec<Type>, ParseError> = lst_vec[1..(lst_vec.len() - 1)]
+        .iter()
+        .map(|val| parse_type(val))
+        .collect();
+    let input_types_unwrapped = match input_types {
+        Ok(val) => val,
+        Err(e) => return Err(e),
+    };
+    let return_type = match parse_type(&lst_vec[lst_vec.len() - 1]) {
+        Ok(val) => val,
+        Err(e) => return Err(e),
+    };
+    Ok(Type::Func(
+        Vector::from(input_types_unwrapped),
+        Box::from(return_type),
+    ))
+}
+
+fn parse_list_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
+    if lst_vec.len() != 2 {
+        return Err(ParseError::from(
+            "Type annotation for list has incorrect number of values.",
+        ));
+    }
+    let lst_type = match parse_type(&lst_vec[1]) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    Ok(Type::List(Box::from(lst_type)))
+}
+
+fn parse_tuple_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
+    let tuple_types: Result<Vec<Type>, ParseError> = lst_vec[1..(lst_vec.len())]
+        .iter()
+        .map(|val| parse_type(val))
+        .collect();
+    let tuple_types_unwrapped = match tuple_types {
+        Ok(val) => val,
+        Err(e) => return Err(e),
+    };
+    Ok(Type::Tuple(Vector::from(tuple_types_unwrapped)))
+}
+
+fn parse_exists_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
+    if lst_vec.len() != 3 {
+        return Err(ParseError::from(
+            "Type annotation for existential type has incorrect number of values.",
+        ));
+    }
+    let type_var = match lst_vec[1].as_name() {
                         Some(val) => {
                             if !val.starts_with('T') {
                                 return Err(ParseError::from("Type variable for existential type is not of the form T0, T1, etc."));
@@ -128,21 +145,11 @@ fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
                             "Type annotation for existential type does not have a valid type variable in its first argument.",
                         )),
                     };
-                    let lst_type = match parse_type(&lst_vec[2]) {
-                        Ok(typ) => typ,
-                        Err(e) => return Err(e),
-                    };
-                    Ok(Type::Exists(type_var, Box::from(lst_type)))
-                }
-                _ => Err(ParseError::from(
-                    r#"Type annotation does not have "->", "tuple", or "list" as first symbol."#,
-                )),
-            }
-        }
-        _ => Err(ParseError::from(
-            "Type annotation is invalid or is missing.",
-        )),
-    }
+    let lst_type = match parse_type(&lst_vec[2]) {
+        Ok(typ) => typ,
+        Err(e) => return Err(e),
+    };
+    Ok(Type::Exists(type_var, Box::from(lst_type)))
 }
 
 fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, ParseError> {
@@ -548,6 +555,22 @@ fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     }
 }
 
+fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 3 {
+        parse(&rest[0]).and_then(|exp| {
+            parse_type(&rest[1]).and_then(|type_var| {
+                parse_type(&rest[2]).and_then(|exist| {
+                    Ok(Expr::new(ExprKind::Pack(Box::from(exp), type_var, exist)))
+                })
+            })
+        })
+    } else {
+        Err(ParseError::from(
+            "get-n expression has incorrect number of arguments.",
+        ))
+    }
+}
+
 pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
     match value {
         lexpr::Value::Number(x) => match x.as_i64() {
@@ -589,6 +612,7 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                     "null" => parse_null(&rest),
                     "make-tuple" => parse_make_tuple(&rest),
                     "get-nth" => parse_get_tuple(&rest),
+                    "pack" => parse_pack(&rest),
                     _ => parse_func(&first, &rest),
                 },
                 None => parse_func(&first, &rest),
