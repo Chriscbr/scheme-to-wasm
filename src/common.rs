@@ -5,9 +5,11 @@ pub enum Type {
     Int,
     Bool,
     Str,
-    List(Box<Type>),
+    List(Box<Type>),               // homogenous list
     Func(Vector<Type>, Box<Type>), // array of input types, and a return type
     Tuple(Vector<Type>),           // array of types
+    Exists(i64, Box<Type>),        // abstract type T, and base type in terms of T
+    TypeVar(i64),                  // abstract type T
     Unknown,                       // placeholder
 }
 
@@ -35,6 +37,8 @@ impl std::fmt::Display for Type {
                 }
                 write!(f, "(tuple{})", typs_str)
             }
+            Type::Exists(_, _) => unimplemented!(),
+            Type::TypeVar(_) => unimplemented!(),
             // // TODO: add existential types properly
             // Type::Env(typs) => {
             //     let mut typs_str = String::new();
@@ -82,6 +86,7 @@ pub enum ExprKind {
     TupleGet(Box<Expr>, Box<Expr>),    // env, index - index must explicitly be a number
     Env(Vector<(String, Expr)>),       // map from var_name to exp
     EnvGet(Box<Expr>, String),         // env, key
+    Pack(Box<Expr>, Type, Type),       // exp, type substitution, existential type
     Id(String),
     Num(i64),
     Bool(bool),
@@ -155,6 +160,7 @@ impl std::fmt::Display for Expr {
                 write!(f, "(make-tuple{} : ({}))", exps_str, typs_str)
             }
             ExprKind::TupleGet(tup, key) => write!(f, "(get-nth {} {})", tup, key),
+            ExprKind::Pack(val, sub, exist) => write!(f, "(pack {} {} {})", val, sub, exist), // TODO: change syntax?
             ExprKind::Id(val) => write!(f, "{}", val),
             ExprKind::Num(val) => write!(f, "{}", val),
             ExprKind::Bool(val) => write!(f, "{}", if *val { "true" } else { "false" }),

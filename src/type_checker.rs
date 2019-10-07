@@ -346,6 +346,29 @@ fn tc_is_null_with_env(exp: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, Type
     }
 }
 
+fn type_substitute(
+    typ: &Type,
+    match_typ: &Type,
+    replace_with: &Type,
+) -> Result<Type, TypeCheckError> {
+}
+
+fn tc_pack_with_env(
+    exp: &Expr,
+    sub: &Type,
+    exist: &Type,
+    env: &mut TypeEnv<Type>,
+) -> Result<Type, TypeCheckError> {
+    if let Type::Exists(type_var, typ) = *exist {
+        // substitute "sub" (some type) for all occurrences of type_var (the quantified type) in exist
+        // then check if it
+    } else {
+        return Err(TypeCheckError::from(
+            "Second argument in pack is not an existential type.",
+        ));
+    }
+}
+
 fn tc_array_with_env(
     values: &Vector<Expr>,
     env: &mut TypeEnv<Type>,
@@ -379,6 +402,7 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
         ExprKind::Null(typ) => Ok(Type::List(Box::from(typ.clone()))),
         ExprKind::Tuple(exps, typs) => tc_tuple_with_env(&exps, &typs, env),
         ExprKind::TupleGet(tup, key) => tc_tuple_get_with_env(&tup, &key, env),
+        ExprKind::Pack(val, sub, exist) => tc_pack_with_env(&val, &sub, &exist, env),
         ExprKind::FnApp(func, args) => tc_apply_with_env(&func, &args, env),
     }
 }
