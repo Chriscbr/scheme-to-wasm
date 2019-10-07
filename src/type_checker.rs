@@ -29,23 +29,6 @@ impl std::error::Error for TypeCheckError {
 // Helper functions
 //
 
-// TODO: eliminate need for this function
-fn check_type_arrays_equal(arr1: &Vector<Type>, arr2: &Vector<Type>) -> bool {
-    if arr1.len() != arr2.len() {
-        return false;
-    }
-    arr1.iter().zip(arr2.iter()).all(|(typ1, typ2)| match typ1 {
-        Type::Func(arg_types1, ret_type_boxed1) => match typ2 {
-            Type::Func(arg_types2, ret_type_boxed2) => {
-                check_type_arrays_equal(arg_types1, arg_types2)
-                    && (*ret_type_boxed1 == *ret_type_boxed2)
-            }
-            _ => false,
-        },
-        _ => typ1 == typ2,
-    })
-}
-
 fn check_lambda_type_with_inputs(
     fn_type: &Type,
     param_types: &Vector<Type>,
@@ -53,7 +36,7 @@ fn check_lambda_type_with_inputs(
     match fn_type {
         Type::Func(arg_types, ret_type_boxed) => {
             let ret_type = ret_type_boxed.as_ref();
-            if check_type_arrays_equal(arg_types, &param_types) {
+            if *arg_types == *param_types {
                 Ok((*ret_type).clone())
             } else {
                 Err(TypeCheckError::from(
@@ -589,66 +572,5 @@ mod tests {
                 Box::from(Type::Tuple(vector![Type::Bool, Type::TypeVar(1)]))
             ),
         );
-    }
-
-    #[test]
-    fn test_check_type_arrays_equal_happy() {
-        let types1 = vector![Type::Int, Type::Bool, Type::Str];
-        let types2 = vector![Type::Int, Type::Bool, Type::Str];
-        assert_eq!(check_type_arrays_equal(&types1, &types2), true);
-
-        let types1 = vector![Type::Func(vector![], Box::from(Type::Int))];
-        let types2 = vector![Type::Func(vector![], Box::from(Type::Int))];
-        assert_eq!(check_type_arrays_equal(&types1, &types2), true);
-
-        let types1 = vector![Type::Func(
-            vector![Type::Int, Type::Int],
-            Box::from(Type::Bool),
-        )];
-        let types2 = vector![Type::Func(
-            vector![Type::Int, Type::Int],
-            Box::from(Type::Bool),
-        )];
-        assert_eq!(check_type_arrays_equal(&types1, &types2), true);
-    }
-
-    #[test]
-    fn test_check_type_arrays_equal_sad() {
-        // types reordered
-        let types1 = vector![Type::Int, Type::Bool, Type::Str];
-        let types2 = vector![Type::Int, Type::Str, Type::Bool];
-        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
-
-        // arr1 shorter
-        let types1 = vector![Type::Int];
-        let types2 = vector![Type::Int, Type::Str, Type::Bool];
-        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
-
-        // arr2 shorter
-        let types1 = vector![Type::Int, Type::Bool, Type::Str];
-        let types2 = vector![Type::Int];
-        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
-
-        // return types differ
-        let types1 = vector![Type::Func(
-            vector![Type::Int, Type::Int],
-            Box::from(Type::Bool),
-        )];
-        let types2 = vector![Type::Func(
-            vector![Type::Int, Type::Int],
-            Box::from(Type::Str),
-        )];
-        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
-
-        // input types differ
-        let types1 = vector![Type::Func(
-            vector![Type::Int, Type::Int],
-            Box::from(Type::Bool),
-        )];
-        let types2 = vector![Type::Func(
-            vector![Type::Int, Type::Str],
-            Box::from(Type::Bool),
-        )];
-        assert_eq!(check_type_arrays_equal(&types1, &types2), false);
     }
 }
