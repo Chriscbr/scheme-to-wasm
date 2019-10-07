@@ -36,9 +36,21 @@ fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
             "bool" => Ok(Type::Bool),
             "string" => Ok(Type::Str),
             "unknown" => Ok(Type::Unknown),
-            _ => Err(ParseError::from(
-                "Type annotation not recognized as a valid type.",
-            )),
+            val => {
+                let mut iter = val.chars();
+                let first = iter.next();
+                if first == Some('T') {
+                    let rest_str: String = iter.collect();
+                    match rest_str.parse::<u64>() {
+                        Ok(num) => Ok(Type::TypeVar(num)),
+                        Err(e) => Err(ParseError(format!("ParseError: {}", e))),
+                    }
+                } else {
+                    Err(ParseError::from(
+                        "Type annotation not recognized as a valid type.",
+                    ))
+                }
+            }
         },
         lexpr::Value::Cons(_) => {
             let lst_vec = match annotation.to_vec() {
@@ -96,6 +108,31 @@ fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
                         Err(e) => return Err(e),
                     };
                     Ok(Type::Tuple(Vector::from(tuple_types_unwrapped)))
+                }
+                Some("exists") => {
+                    if lst_vec.len() != 3 {
+                        return Err(ParseError::from(
+                            "Type annotation for existential type has incorrect number of values.",
+                        ));
+                    }
+                    let type_var = match lst_vec[1].as_name() {
+                        Some(val) => {
+                            if !val.starts_with('T') {
+                                return Err(ParseError::from("Type variable for existential type is not of the form T0, T1, etc."));
+                            }
+                            match val[1..].parse::<u64>() {
+                            Ok(num) => num,
+                            Err(e) => return Err(ParseError(format!("ParseError: {}", e))),
+                        }},
+                        None => return Err(ParseError::from(
+                            "Type annotation for existential type does not have a valid type variable in its first argument.",
+                        )),
+                    };
+                    let lst_type = match parse_type(&lst_vec[2]) {
+                        Ok(typ) => typ,
+                        Err(e) => return Err(e),
+                    };
+                    Ok(Type::Exists(type_var, Box::from(lst_type)))
                 }
                 _ => Err(ParseError::from(
                     r#"Type annotation does not have "->", "tuple", or "list" as first symbol."#,
@@ -582,6 +619,12 @@ mod tests {
         let exp = lexpr::from_str("string").unwrap();
         assert_eq!(parse_type(&exp).unwrap(), Type::Str);
 
+        let exp = lexpr::from_str("T0").unwrap();
+        assert_eq!(parse_type(&exp).unwrap(), Type::TypeVar(0));
+
+        let exp = lexpr::from_str("T42").unwrap();
+        assert_eq!(parse_type(&exp).unwrap(), Type::TypeVar(42));
+
         let exp = lexpr::from_str("(list int)").unwrap();
         assert_eq!(parse_type(&exp).unwrap(), Type::List(Box::from(Type::Int)));
 
@@ -631,6 +674,15 @@ mod tests {
                     Type::Int
                 ],
                 Box::from(Type::Bool)
+            )
+        );
+
+        let exp = lexpr::from_str("(exists T0 (-> T0 bool))").unwrap();
+        assert_eq!(
+            parse_type(&exp).unwrap(),
+            Type::Exists(
+                0,
+                Box::from(Type::Func(vector![Type::TypeVar(0)], Box::from(Type::Bool)))
             )
         );
     }

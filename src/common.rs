@@ -39,7 +39,7 @@ impl std::fmt::Display for Type {
                 write!(f, "(-> {} {})", format_vector(in_typs.clone()), ret_typ)
             }
             Type::Tuple(typs) => write!(f, "(tuple {})", format_vector(typs.clone())),
-            Type::Exists(_, _) => unimplemented!(),
+            Type::Exists(typ_var, base) => write!(f, "(exists T{} {})", typ_var, base),
             Type::TypeVar(id) => write!(f, "T{}", id),
             // // TODO: add existential types properly
             // Type::Env(typs) => {

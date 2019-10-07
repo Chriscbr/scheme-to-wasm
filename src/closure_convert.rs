@@ -371,9 +371,10 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                 .iter()
                 .map(|pair| match type_check(&pair.1) {
                     Ok(exp_typ) => Ok((pair.0.clone(), exp_typ)),
-                    Err(e) => Err(ClosureConvertError::from(
-                        format!("Type checking error during closure conversion: {}", e).as_str(),
-                    )),
+                    Err(e) => Err(ClosureConvertError(format!(
+                        "Type checking error during closure conversion: {}",
+                        e
+                    ))),
                 })
                 .collect()
             {
