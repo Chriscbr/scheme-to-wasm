@@ -456,13 +456,23 @@ fn test_type_check_apply_sad() {
 
 #[test]
 fn test_type_check_pack_happy() {
+    // show that multiple types can inhabit an existential type
+    let exp = parse(&lexpr::from_str("(pack 3 int (exists T0 T0))").unwrap()).unwrap();
+    let typ = parse_type(&lexpr::from_str("(exists T0 T0)").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), typ);
+
+    let exp = parse(&lexpr::from_str("(pack true bool (exists T0 T0))").unwrap()).unwrap();
+    let typ = parse_type(&lexpr::from_str("(exists T0 T0)").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), typ);
+
+    // function
     let exp = parse(
         &lexpr::from_str("(pack (lambda ((x : int)) : int (+ x 1)) int (exists T0 (-> T0 T0)))")
             .unwrap(),
     )
     .unwrap();
-    let expected_type = parse_type(&lexpr::from_str("(exists T0 (-> T0 T0))").unwrap()).unwrap();
-    assert_eq!(type_check(&exp).unwrap(), expected_type,);
+    let typ = parse_type(&lexpr::from_str("(exists T0 (-> T0 T0))").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), typ);
 
     // slightly more specific type ascription
     let exp = parse(
@@ -470,6 +480,24 @@ fn test_type_check_pack_happy() {
             .unwrap(),
     )
     .unwrap();
-    let expected_type = parse_type(&lexpr::from_str("(exists T0 (-> T0 int))").unwrap()).unwrap();
-    assert_eq!(type_check(&exp).unwrap(), expected_type,);
+    let typ = parse_type(&lexpr::from_str("(exists T0 (-> T0 int))").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), typ);
+
+    // example using multiple existentials
+}
+
+#[test]
+fn test_type_check_pack_sad() {
+    let exp = parse(&lexpr::from_str("(pack true int (exists T0 T0))").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    let exp = parse(&lexpr::from_str("(pack 3 int (exists T0 bool))").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    let exp = parse(
+        &lexpr::from_str("(pack (lambda ((x : int)) : bool 3) int (exists T0 (-> T0 T0)))")
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
 }
