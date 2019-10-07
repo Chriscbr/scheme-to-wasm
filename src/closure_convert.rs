@@ -48,47 +48,6 @@ impl std::error::Error for ClosureConvertError {
     }
 }
 
-// #[derive(Clone, Debug, PartialEq)]
-// /// Represents a closure-converted expression.
-// pub enum CExpr {
-//     // operator, arg1, arg2
-//     Binop(BinOp, Box<CExpr>, Box<CExpr>),
-
-//     // predicate, consequent, alternate
-//     If(Box<CExpr>, Box<CExpr>, Box<CExpr>),
-
-//     // variable bindings, body
-//     Let(Vector<(String, CExpr)>, Box<CExpr>),
-
-//     // arg names/types (environment should be first argument), return type, body
-//     Lambda(Vector<(String, Type)>, Type, Box<CExpr>),
-
-//     // lambda, environment
-//     Closure(Box<CExpr>, Box<CExpr>),
-
-//     // func, arguments
-//     ClosureApp(Box<CExpr>, Vector<CExpr>),
-
-//     // environment mapping
-//     Env(Vector<(String, CExpr)>),
-
-//     // environment name, key
-//     EnvGet(String, String),
-
-//     Begin(Vector<CExpr>),
-//     Set(String, Box<CExpr>),
-//     Cons(Box<CExpr>, Box<CExpr>),
-//     Car(Box<CExpr>),
-//     Cdr(Box<CExpr>),
-//     IsNull(Box<CExpr>),
-//     Null(Type),
-
-//     Id(String),
-//     Num(i64),
-//     Bool(bool),
-//     Str(String),
-// }
-
 fn cc_bindings(
     bindings: &Vector<(String, Expr)>,
     env: &TypeEnv<Type>,
@@ -290,6 +249,7 @@ fn substitute(
                 )))
             })
         }
+        ExprKind::Pack(val, sub, exist) => unimplemented!(),
         ExprKind::IsNull(val) => substitute(&val, match_exp, replace_with)
             .and_then(|sval| Ok(Expr::new(ExprKind::IsNull(Box::from(sval))))),
         ExprKind::Null(_) => Ok(exp.clone()),
@@ -353,6 +313,7 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         ExprKind::Cdr(val) => get_free_vars(val.as_ref()),
         ExprKind::Tuple(vals, _typs) => get_free_vars_array(&vals),
         ExprKind::TupleGet(tuple, _key) => get_free_vars(&tuple),
+        ExprKind::Pack(val, sub, exist) => unimplemented!(),
         ExprKind::IsNull(val) => get_free_vars(val.as_ref()),
         ExprKind::Null(_) => Ok(vector![]),
         ExprKind::Id(x) => Ok(vector![x.clone()]),
@@ -470,6 +431,7 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                 key.clone(),
             )))
         }),
+        ExprKind::Pack(val, sub, exist) => unimplemented!(),
         ExprKind::FnApp(func, args) => {
             let cargs: Vector<Expr> = match args.iter().map(|arg| cc(&arg, env)).collect() {
                 Ok(val) => val,

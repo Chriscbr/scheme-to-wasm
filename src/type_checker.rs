@@ -29,6 +29,7 @@ impl std::error::Error for TypeCheckError {
 // Helper functions
 //
 
+// TODO: eliminate need for this function
 fn check_type_arrays_equal(arr1: &Vector<Type>, arr2: &Vector<Type>) -> bool {
     if arr1.len() != arr2.len() {
         return false;
@@ -346,11 +347,59 @@ fn tc_is_null_with_env(exp: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, Type
     }
 }
 
-fn type_substitute(
-    typ: &Type,
-    match_typ: &Type,
-    replace_with: &Type,
-) -> Result<Type, TypeCheckError> {
+fn type_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Result<Type, TypeCheckError> {
+    match typ {
+        Type::Int => Ok(Type::Int),
+        Type::Bool => Ok(Type::Bool),
+        Type::Str => Ok(Type::Str),
+        Type::List(inner_typ) => type_substitute(inner_typ, type_var, replace_with)
+            .and_then(|styp| Ok(Type::List(Box::from(styp)))),
+        Type::Func(in_typs, ret_typ) => {
+            let in_typs_vec: Result<Vector<Type>, TypeCheckError> = in_typs
+                .iter()
+                .map(|inner_typ| type_substitute(inner_typ, type_var, replace_with))
+                .collect();
+            in_typs_vec.and_then(|sin_typs| {
+                type_substitute(ret_typ, type_var, replace_with)
+                    .and_then(|sret_typ| Ok(Type::Func(sin_typs, Box::from(sret_typ))))
+            })
+        }
+        Type::Tuple(typs) => {
+            let typs_vec: Result<Vector<Type>, TypeCheckError> = typs
+                .iter()
+                .map(|inner_typ| type_substitute(inner_typ, type_var, replace_with))
+                .collect();
+            typs_vec.and_then(|styps| Ok(Type::Tuple(styps)))
+        }
+        Type::Exists(inner_type_var, inner_typ) => {
+            if *inner_type_var == type_var {
+                let new_inner_type_var = type_var + 1;
+                match type_substitute(
+                    dbg!(inner_typ),
+                    dbg!(*inner_type_var),
+                    dbg!(&Type::TypeVar(new_inner_type_var)),
+                ) {
+                    Ok(val) => type_substitute(dbg!(&val), dbg!(type_var), dbg!(replace_with))
+                        .and_then(|sub_inner_typ| {
+                            Ok(Type::Exists(new_inner_type_var, Box::from(sub_inner_typ)))
+                        }),
+                    Err(e) => Err(e),
+                }
+            } else {
+                type_substitute(inner_typ, type_var, replace_with).and_then(|sub_inner_typ| {
+                    Ok(Type::Exists(*inner_type_var, Box::from(sub_inner_typ)))
+                })
+            }
+        }
+        Type::TypeVar(x) => {
+            if *x == type_var {
+                Ok(replace_with.clone())
+            } else {
+                Ok(Type::TypeVar(*x))
+            }
+        }
+        Type::Unknown => Ok(Type::Unknown),
+    }
 }
 
 fn tc_pack_with_env(
@@ -359,13 +408,14 @@ fn tc_pack_with_env(
     exist: &Type,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    if let Type::Exists(type_var, typ) = *exist {
+    if let Type::Exists(type_var, typ) = exist {
         // substitute "sub" (some type) for all occurrences of type_var (the quantified type) in exist
         // then check if it
+        unimplemented!()
     } else {
-        return Err(TypeCheckError::from(
+        Err(TypeCheckError::from(
             "Second argument in pack is not an existential type.",
-        ));
+        ))
     }
 }
 
@@ -417,6 +467,129 @@ pub fn type_check(value: &Expr) -> Result<Type, TypeCheckError> {
 mod tests {
     use super::*;
     use im_rc::vector;
+
+    #[test]
+    fn test_type_substitute_idempotent() {
+        // no substitution (simple)
+        let typ = Type::Int;
+        let type_var = 0;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::Int
+        );
+
+        // no substitution (list)
+        let typ = Type::List(Box::from(Type::Int));
+        let type_var = 0;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::List(Box::from(Type::Int))
+        );
+
+        // no substitution (function)
+        let typ = Type::Func(vector![Type::Str, Type::Bool], Box::from(Type::Str));
+        let type_var = 0;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::Func(vector![Type::Str, Type::Bool], Box::from(Type::Str))
+        );
+
+        // no substitution (tuple)
+        let typ = Type::Tuple(vector![Type::Str, Type::Bool, Type::Int]);
+        let type_var = 0;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::Tuple(vector![Type::Str, Type::Bool, Type::Int])
+        );
+
+        // no substitution (existential, different bound type)
+        let typ = Type::Exists(1, Box::from(Type::TypeVar(1)));
+        let type_var = 0;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::Exists(1, Box::from(Type::TypeVar(1))),
+        );
+
+        // no substitution (existential, same bound type - inner typevar should get renamed)
+        let typ = Type::Exists(0, Box::from(Type::TypeVar(0)));
+        let type_var = 0;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::Exists(1, Box::from(Type::TypeVar(1))),
+        );
+
+        // no substitution (different type var)
+        let typ = Type::TypeVar(1);
+        let type_var = 0;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::TypeVar(1),
+        );
+    }
+
+    #[test]
+    fn test_type_substitute_happy() {
+        // substitution (simple)
+        let typ = Type::TypeVar(3);
+        let type_var = 3;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::Bool
+        );
+
+        // substitution (list)
+        let typ = Type::List(Box::from(Type::TypeVar(3)));
+        let type_var = 3;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::List(Box::from(Type::Bool))
+        );
+
+        // substitution (function)
+        let typ = Type::Func(
+            vector![Type::TypeVar(3), Type::Bool],
+            Box::from(Type::TypeVar(3)),
+        );
+        let type_var = 3;
+        let replace_with = Type::Int;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::Func(vector![Type::Int, Type::Bool], Box::from(Type::Int))
+        );
+
+        // substitution (tuple)
+        let typ = Type::Tuple(vector![Type::TypeVar(3), Type::Bool]);
+        let type_var = 3;
+        let replace_with = Type::Int;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::Tuple(vector![Type::Int, Type::Bool])
+        );
+
+        // substitution (existential)
+        let typ = Type::Exists(
+            1,
+            Box::from(Type::Tuple(vector![Type::TypeVar(0), Type::TypeVar(1)])),
+        );
+        let type_var = 0;
+        let replace_with = Type::Bool;
+        assert_eq!(
+            type_substitute(&typ, type_var, &replace_with).unwrap(),
+            Type::Exists(
+                1,
+                Box::from(Type::Tuple(vector![Type::Bool, Type::TypeVar(1)]))
+            ),
+        );
+    }
 
     #[test]
     fn test_check_type_arrays_equal_happy() {

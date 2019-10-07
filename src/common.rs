@@ -1,5 +1,20 @@
 use im_rc::Vector;
 
+/// Prints a vector as space separated values
+fn format_vector<T: Clone + std::fmt::Display>(arr: Vector<T>) -> String {
+    if arr.is_empty() {
+        String::new()
+    } else {
+        let mut result = String::new();
+        for typ in arr {
+            result.push_str(format!("{}", typ).as_str());
+            result.push_str(" ");
+        }
+        result.pop();
+        result
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Int,
@@ -8,8 +23,8 @@ pub enum Type {
     List(Box<Type>),               // homogenous list
     Func(Vector<Type>, Box<Type>), // array of input types, and a return type
     Tuple(Vector<Type>),           // array of types
-    Exists(i64, Box<Type>),        // abstract type T, and base type in terms of T
-    TypeVar(i64),                  // abstract type T
+    Exists(u64, Box<Type>),        // abstract type T, and base type in terms of T
+    TypeVar(u64),                  // abstract type T
     Unknown,                       // placeholder
 }
 
@@ -21,24 +36,11 @@ impl std::fmt::Display for Type {
             Type::Str => write!(f, "string"),
             Type::List(typ) => write!(f, "(list {})", typ),
             Type::Func(in_typs, ret_typ) => {
-                // TODO: extract this to a function
-                let mut in_typs_str = String::new();
-                for typ in in_typs {
-                    in_typs_str.push_str(" ");
-                    in_typs_str.push_str(format!("{}", typ).as_str());
-                }
-                write!(f, "(-> {}{})", in_typs_str, ret_typ)
+                write!(f, "(-> {} {})", format_vector(in_typs.clone()), ret_typ)
             }
-            Type::Tuple(typs) => {
-                let mut typs_str = String::new();
-                for typ in typs {
-                    typs_str.push_str(" ");
-                    typs_str.push_str(format!("{}", typ).as_str());
-                }
-                write!(f, "(tuple{})", typs_str)
-            }
+            Type::Tuple(typs) => write!(f, "(tuple {})", format_vector(typs.clone())),
             Type::Exists(_, _) => unimplemented!(),
-            Type::TypeVar(_) => unimplemented!(),
+            Type::TypeVar(id) => write!(f, "T{}", id),
             // // TODO: add existential types properly
             // Type::Env(typs) => {
             //     let mut typs_str = String::new();
@@ -100,65 +102,47 @@ impl std::fmt::Display for Expr {
             ExprKind::Binop(op, exp1, exp2) => write!(f, "({} {} {})", op, exp1, exp2),
             ExprKind::If(pred, cons, alt) => write!(f, "(if {} {} {})", pred, cons, alt),
             ExprKind::Let(bindings, body) => {
-                let mut bindings_str = String::new();
-                for pair in bindings {
-                    bindings_str.push_str(format!("({} {}) ", pair.0, pair.1).as_str());
-                }
-                bindings_str.pop();
-                write!(f, "(let ({}) {})", bindings_str, body)
+                let bindings_str_vec = bindings
+                    .iter()
+                    .map(|pair| format!("({} {}) ", pair.0, pair.1))
+                    .collect();
+                write!(f, "(let ({}) {})", format_vector(bindings_str_vec), body)
             }
             ExprKind::Lambda(params, ret_type, body) => {
-                let mut params_str = String::new();
-                for pair in params {
-                    params_str.push_str(format!("({} : {}) ", pair.0, pair.1).as_str());
-                }
-                if !params.is_empty() {
-                    params_str.pop();
-                }
-                write!(f, "(lambda ({}) : {} {})", params_str, ret_type, body)
+                let params_str_vec = params
+                    .iter()
+                    .map(|pair| format!("({} {}) ", pair.0, pair.1))
+                    .collect();
+                write!(
+                    f,
+                    "(lambda ({}) : {} {})",
+                    format_vector(params_str_vec),
+                    ret_type,
+                    body
+                )
             }
-            ExprKind::FnApp(func, args) => {
-                let mut args_str = String::new();
-                for arg in args {
-                    args_str.push_str(format!(" {}", arg).as_str());
-                }
-                write!(f, "({}{})", func, args_str)
-            }
+            ExprKind::FnApp(func, args) => write!(f, "({} {})", func, format_vector(args.clone())),
             ExprKind::Env(bindings) => {
-                let mut bindings_str = String::new();
-                for binding in bindings {
-                    bindings_str.push_str(format!(" ({} {})", binding.0, binding.1).as_str());
-                }
-                write!(f, "(make-env {})", bindings_str)
+                let bindings_str_vec = bindings
+                    .iter()
+                    .map(|pair| format!("({} {}) ", pair.0, pair.1))
+                    .collect();
+                write!(f, "(make-env {})", format_vector(bindings_str_vec))
             }
             ExprKind::EnvGet(clos_env, key) => write!(f, "(env-ref {} {})", clos_env, key),
-            ExprKind::Begin(exps) => {
-                let mut exps_str = String::new();
-                for exp in exps {
-                    exps_str.push_str(format!(" {}", exp).as_str());
-                }
-                write!(f, "(begin {})", exps_str)
-            }
+            ExprKind::Begin(exps) => write!(f, "(begin {})", format_vector(exps.clone())),
             ExprKind::Set(var_name, exp) => write!(f, "(set! {} {})", var_name, exp),
             ExprKind::Cons(first, second) => write!(f, "(cons {} {})", first, second),
             ExprKind::Car(exp) => write!(f, "(car {})", exp),
             ExprKind::Cdr(exp) => write!(f, "(cdr {})", exp),
             ExprKind::IsNull(exp) => write!(f, "(null? {})", exp),
             ExprKind::Null(typ) => write!(f, "(null {})", typ),
-            ExprKind::Tuple(exps, typs) => {
-                let mut exps_str = String::new();
-                for exp in exps {
-                    exps_str.push_str(format!(" {}", exp).as_str());
-                }
-                let mut typs_str = String::new();
-                for typ in typs {
-                    typs_str.push_str(format!("{} ", typ).as_str());
-                }
-                if !typs.is_empty() {
-                    typs_str.pop();
-                }
-                write!(f, "(make-tuple{} : ({}))", exps_str, typs_str)
-            }
+            ExprKind::Tuple(exps, typs) => write!(
+                f,
+                "(make-tuple {} : ({}))",
+                format_vector(exps.clone()),
+                format_vector(typs.clone())
+            ),
             ExprKind::TupleGet(tup, key) => write!(f, "(get-nth {} {})", tup, key),
             ExprKind::Pack(val, sub, exist) => write!(f, "(pack {} {} {})", val, sub, exist), // TODO: change syntax?
             ExprKind::Id(val) => write!(f, "{}", val),
