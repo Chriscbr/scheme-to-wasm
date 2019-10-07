@@ -1,4 +1,4 @@
-use crate::common::{BinOp, Expr, Type, TypeEnv};
+use crate::common::{Expr, Type, TypeEnv};
 use crate::type_checker::type_check;
 use im_rc::{vector, Vector};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -48,51 +48,51 @@ impl std::error::Error for ClosureConvertError {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-/// Represents a closure-converted expression.
-pub enum CExpr {
-    // operator, arg1, arg2
-    Binop(BinOp, Box<CExpr>, Box<CExpr>),
+// #[derive(Clone, Debug, PartialEq)]
+// /// Represents a closure-converted expression.
+// pub enum CExpr {
+//     // operator, arg1, arg2
+//     Binop(BinOp, Box<CExpr>, Box<CExpr>),
 
-    // predicate, consequent, alternate
-    If(Box<CExpr>, Box<CExpr>, Box<CExpr>),
+//     // predicate, consequent, alternate
+//     If(Box<CExpr>, Box<CExpr>, Box<CExpr>),
 
-    // variable bindings, body
-    Let(Vector<(String, CExpr)>, Box<CExpr>),
+//     // variable bindings, body
+//     Let(Vector<(String, CExpr)>, Box<CExpr>),
 
-    // arg names/types (environment should be first argument), return type, body
-    Lambda(Vector<(String, Type)>, Type, Box<CExpr>),
+//     // arg names/types (environment should be first argument), return type, body
+//     Lambda(Vector<(String, Type)>, Type, Box<CExpr>),
 
-    // lambda, environment
-    Closure(Box<CExpr>, Box<CExpr>),
+//     // lambda, environment
+//     Closure(Box<CExpr>, Box<CExpr>),
 
-    // func, arguments
-    ClosureApp(Box<CExpr>, Vector<CExpr>),
+//     // func, arguments
+//     ClosureApp(Box<CExpr>, Vector<CExpr>),
 
-    // environment mapping
-    Env(Vector<(String, CExpr)>),
+//     // environment mapping
+//     Env(Vector<(String, CExpr)>),
 
-    // environment name, key
-    EnvGet(String, String),
+//     // environment name, key
+//     EnvGet(String, String),
 
-    Begin(Vector<CExpr>),
-    Set(String, Box<CExpr>),
-    Cons(Box<CExpr>, Box<CExpr>),
-    Car(Box<CExpr>),
-    Cdr(Box<CExpr>),
-    IsNull(Box<CExpr>),
-    Null(Type),
+//     Begin(Vector<CExpr>),
+//     Set(String, Box<CExpr>),
+//     Cons(Box<CExpr>, Box<CExpr>),
+//     Car(Box<CExpr>),
+//     Cdr(Box<CExpr>),
+//     IsNull(Box<CExpr>),
+//     Null(Type),
 
-    Id(String),
-    Num(i64),
-    Bool(bool),
-    Str(String),
-}
+//     Id(String),
+//     Num(i64),
+//     Bool(bool),
+//     Str(String),
+// }
 
 fn cc_bindings(
     bindings: &Vector<(String, Expr)>,
     env: &TypeEnv<Type>,
-) -> Result<Vector<(String, CExpr)>, ClosureConvertError> {
+) -> Result<Vector<(String, Expr)>, ClosureConvertError> {
     bindings
         .iter()
         .map(|pair| cc(&pair.1, env).and_then(|cexp| Ok((pair.0.clone(), cexp))))
@@ -104,7 +104,7 @@ fn cc_lambda(
     ret_type: &Type,
     body: &Expr,
     env: &TypeEnv<Type>,
-) -> Result<CExpr, ClosureConvertError> {
+) -> Result<Expr, ClosureConvertError> {
     let cbody = match cc(body, &env.add_bindings(params.clone())) {
         Ok(val) => val,
         Err(e) => return Err(e),
@@ -123,12 +123,12 @@ fn cc_lambda(
     new_params.push_front((env_name.clone(), Type::Unknown));
 
     // (x, Id(x)) (y, Id(y)) ...
-    let env_contents: Vector<(String, CExpr)> = free_vars
+    let env_contents: Vector<(String, Expr)> = free_vars
         .iter()
-        .map(|var| (var.clone(), CExpr::Id(var.clone())))
+        .map(|var| (var.clone(), Expr::Id(var.clone())))
         .collect();
-    let env_exp = CExpr::Env(env_contents);
-    let mut new_body: CExpr = match cc(body, env) {
+    let new_env = Expr::Env(env_contents);
+    let mut new_body: Expr = match cc(body, env) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
@@ -136,48 +136,49 @@ fn cc_lambda(
         new_body = match substitute(
             &new_body,
             &var.clone(),
-            &CExpr::EnvGet(env_name.clone(), var.clone()),
+            &Expr::EnvGet(Box::from(Expr::Id(env_name.clone())), var.clone()),
         ) {
             Ok(val) => val,
             Err(e) => return Err(e),
         };
     }
-    Ok(CExpr::Closure(
-        Box::from(CExpr::Lambda(
-            new_params,
-            ret_type.clone(),
-            Box::from(new_body),
-        )),
-        Box::from(env_exp),
+
+    let new_param_types: Vector<Type> = new_params.iter().map(|pair| pair.1.clone()).collect();
+    let new_lambda = Expr::Lambda(new_params, ret_type.clone(), Box::from(new_body));
+    let new_lambda_type = Type::Func(new_param_types, Box::from(ret_type.clone()));
+    // TODO: implement type of environments
+    Ok(Expr::Tuple(
+        vector![new_lambda, new_env],
+        vector![new_lambda_type, Type::Unknown],
     ))
 }
 
 fn substitute_array(
-    exps: &Vector<CExpr>,
+    exps: &Vector<Expr>,
     match_exp: &str,
-    replace_with: &CExpr,
-) -> Result<Vector<CExpr>, ClosureConvertError> {
+    replace_with: &Expr,
+) -> Result<Vector<Expr>, ClosureConvertError> {
     exps.iter()
         .map(|val| substitute(val, match_exp, replace_with))
         .collect()
 }
 
 fn substitute(
-    exp: &CExpr,
+    exp: &Expr,
     match_exp: &str,
-    replace_with: &CExpr,
-) -> Result<CExpr, ClosureConvertError> {
+    replace_with: &Expr,
+) -> Result<Expr, ClosureConvertError> {
     match exp {
-        CExpr::Binop(op, arg1, arg2) => {
+        Expr::Binop(op, arg1, arg2) => {
             substitute(arg1, match_exp, replace_with).and_then(|sarg1| {
                 substitute(arg2, match_exp, replace_with)
-                    .and_then(|sarg2| Ok(CExpr::Binop(*op, Box::from(sarg1), Box::from(sarg2))))
+                    .and_then(|sarg2| Ok(Expr::Binop(*op, Box::from(sarg1), Box::from(sarg2))))
             })
         }
-        CExpr::If(pred, cons, alt) => substitute(pred, match_exp, replace_with).and_then(|spred| {
+        Expr::If(pred, cons, alt) => substitute(pred, match_exp, replace_with).and_then(|spred| {
             substitute(cons, match_exp, replace_with).and_then(|scons| {
                 substitute(alt, match_exp, replace_with).and_then(|salt| {
-                    Ok(CExpr::If(
+                    Ok(Expr::If(
                         Box::from(spred),
                         Box::from(scons),
                         Box::from(salt),
@@ -185,54 +186,42 @@ fn substitute(
                 })
             })
         }),
-        CExpr::Let(bindings, body) => {
-            let bindings_sub: Result<Vector<(String, CExpr)>, ClosureConvertError> = bindings
+        Expr::Let(bindings, body) => {
+            let bindings_sub: Result<Vector<(String, Expr)>, ClosureConvertError> = bindings
                 .iter()
                 .map(|pair| {
                     substitute(&pair.1, match_exp, replace_with)
                         .and_then(|sexp| Ok((pair.0.clone(), sexp)))
                 })
                 .collect();
-            let bindings_sub: Vector<(String, CExpr)> = match bindings_sub {
+            let bindings_sub: Vector<(String, Expr)> = match bindings_sub {
                 Ok(val) => val,
                 Err(e) => return Err(e),
             };
             substitute(body, match_exp, replace_with)
-                .and_then(|sbody| Ok(CExpr::Let(bindings_sub, Box::from(sbody))))
+                .and_then(|sbody| Ok(Expr::Let(bindings_sub, Box::from(sbody))))
         }
-        CExpr::Lambda(params, ret_type, body) => {
+        Expr::Lambda(params, ret_type, body) => {
             let param_names: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
             if !param_names.contains(&String::from(match_exp)) {
                 let sbody = match substitute(body, match_exp, replace_with) {
                     Ok(val) => val,
                     Err(e) => return Err(e),
                 };
-                Ok(CExpr::Lambda(
+                Ok(Expr::Lambda(
                     params.clone(),
                     ret_type.clone(),
                     Box::from(sbody),
                 ))
             } else {
-                Ok(CExpr::Lambda(
-                    params.clone(),
-                    ret_type.clone(),
-                    body.clone(),
-                ))
+                Ok(Expr::Lambda(params.clone(), ret_type.clone(), body.clone()))
             }
         }
-        CExpr::Closure(lambda, env) => {
-            substitute(lambda, match_exp, replace_with).and_then(|slambda| {
-                substitute(env, match_exp, replace_with)
-                    .and_then(|senv| Ok(CExpr::Closure(Box::from(slambda), Box::from(senv))))
-            })
-        }
-        CExpr::ClosureApp(func, args) => {
-            substitute(func, match_exp, replace_with).and_then(|sfunc| {
-                substitute_array(args, match_exp, replace_with)
-                    .and_then(|sargs| Ok(CExpr::ClosureApp(Box::from(sfunc), sargs)))
-            })
-        }
-        CExpr::Env(bindings) => {
+        Expr::FnApp(func, args) => substitute(func, match_exp, replace_with).and_then(|sfunc| {
+            substitute_array(args, match_exp, replace_with)
+                .and_then(|sargs| Ok(Expr::FnApp(Box::from(sfunc), sargs)))
+        }),
+        Expr::Env(bindings) => {
             match bindings
                 .iter()
                 .map(|pair| {
@@ -241,42 +230,50 @@ fn substitute(
                 })
                 .collect()
             {
-                Ok(val) => Ok(CExpr::Env(val)),
+                Ok(val) => Ok(Expr::Env(val)),
                 Err(e) => Err(e),
             }
         }
-        CExpr::EnvGet(_env_name, _var) => Ok(exp.clone()), // ?
-        CExpr::Begin(exps) => substitute_array(exps, match_exp, replace_with)
-            .and_then(|sexps| Ok(CExpr::Begin(sexps))),
-        CExpr::Set(var, val) => substitute(val, match_exp, replace_with)
-            .and_then(|sval| Ok(CExpr::Set(var.clone(), Box::from(sval)))),
-        CExpr::Cons(first, second) => {
+        Expr::EnvGet(clos_env, var) => substitute(clos_env, match_exp, replace_with)
+            .and_then(|sclos_env| Ok(Expr::EnvGet(Box::from(sclos_env), var.clone()))),
+        Expr::Begin(exps) => {
+            substitute_array(exps, match_exp, replace_with).and_then(|sexps| Ok(Expr::Begin(sexps)))
+        }
+        Expr::Set(var, val) => substitute(val, match_exp, replace_with)
+            .and_then(|sval| Ok(Expr::Set(var.clone(), Box::from(sval)))),
+        Expr::Cons(first, second) => {
             substitute(first, match_exp, replace_with).and_then(|sfirst| {
                 substitute(second, match_exp, replace_with)
-                    .and_then(|ssecond| Ok(CExpr::Cons(Box::from(sfirst), Box::from(ssecond))))
+                    .and_then(|ssecond| Ok(Expr::Cons(Box::from(sfirst), Box::from(ssecond))))
             })
         }
-        CExpr::Car(val) => substitute(val, match_exp, replace_with)
-            .and_then(|sval| Ok(CExpr::Car(Box::from(sval)))),
-        CExpr::Cdr(val) => substitute(val, match_exp, replace_with)
-            .and_then(|sval| Ok(CExpr::Cdr(Box::from(sval)))),
-        CExpr::IsNull(val) => substitute(val, match_exp, replace_with)
-            .and_then(|sval| Ok(CExpr::IsNull(Box::from(sval)))),
-        CExpr::Null(_) => Ok(exp.clone()),
-        CExpr::Id(x) => {
+        Expr::Car(val) => {
+            substitute(val, match_exp, replace_with).and_then(|sval| Ok(Expr::Car(Box::from(sval))))
+        }
+        Expr::Cdr(val) => {
+            substitute(val, match_exp, replace_with).and_then(|sval| Ok(Expr::Cdr(Box::from(sval))))
+        }
+        Expr::Tuple(vals, typs) => substitute_array(vals, match_exp, replace_with)
+            .and_then(|svals| Ok(Expr::Tuple(svals, typs.clone()))),
+        Expr::TupleGet(tuple, key) => substitute(tuple, match_exp, replace_with)
+            .and_then(|stuple| Ok(Expr::TupleGet(Box::from(stuple), key.clone()))),
+        Expr::IsNull(val) => substitute(val, match_exp, replace_with)
+            .and_then(|sval| Ok(Expr::IsNull(Box::from(sval)))),
+        Expr::Null(_) => Ok(exp.clone()),
+        Expr::Id(x) => {
             if x == match_exp {
                 Ok(replace_with.clone())
             } else {
-                Ok(CExpr::Id(x.clone()))
+                Ok(Expr::Id(x.clone()))
             }
         }
-        CExpr::Num(_) => Ok(exp.clone()),
-        CExpr::Bool(_) => Ok(exp.clone()),
-        CExpr::Str(_) => Ok(exp.clone()),
+        Expr::Num(_) => Ok(exp.clone()),
+        Expr::Bool(_) => Ok(exp.clone()),
+        Expr::Str(_) => Ok(exp.clone()),
     }
 }
 
-fn get_free_vars_array(exps: &Vector<CExpr>) -> Result<Vector<String>, ClosureConvertError> {
+fn get_free_vars_array(exps: &Vector<Expr>) -> Result<Vector<String>, ClosureConvertError> {
     let var_vecs: Result<Vector<Vector<String>>, ClosureConvertError> =
         exps.iter().map(|val| get_free_vars(val)).collect();
     var_vecs.and_then(|vecs: Vector<Vector<String>>| {
@@ -286,18 +283,18 @@ fn get_free_vars_array(exps: &Vector<CExpr>) -> Result<Vector<String>, ClosureCo
     })
 }
 
-fn get_free_vars(exp: &CExpr) -> Result<Vector<String>, ClosureConvertError> {
+fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
     match exp {
-        CExpr::Binop(_op, arg1, arg2) => get_free_vars(arg1).and_then(|vars1| {
+        Expr::Binop(_op, arg1, arg2) => get_free_vars(arg1).and_then(|vars1| {
             get_free_vars(arg2).and_then(|vars2| Ok(concat_vectors(vars1, vars2)))
         }),
-        CExpr::If(pred, cons, alt) => get_free_vars(pred).and_then(|vars1| {
+        Expr::If(pred, cons, alt) => get_free_vars(pred).and_then(|vars1| {
             get_free_vars(cons).and_then(|vars2| {
                 get_free_vars(alt)
                     .and_then(|vars3| Ok(concat_vectors(concat_vectors(vars1, vars2), vars3)))
             })
         }),
-        CExpr::Let(bindings, body) => {
+        Expr::Let(bindings, body) => {
             let binding_vars: Vector<String> = bindings.iter().map(|pair| pair.0.clone()).collect();
             let mut body_vars = match get_free_vars(body) {
                 Ok(val) => val,
@@ -306,36 +303,35 @@ fn get_free_vars(exp: &CExpr) -> Result<Vector<String>, ClosureConvertError> {
             body_vars.retain(|var| !binding_vars.contains(var));
             Ok(body_vars)
         }
-        CExpr::Lambda(params, _ret_type, body) => get_free_vars_lambda(params, body),
-        CExpr::Closure(lambda, env) => get_free_vars(lambda).and_then(|vars1| {
-            get_free_vars(env).and_then(|vars2| Ok(concat_vectors(vars1, vars2)))
-        }),
-        CExpr::ClosureApp(func, args) => {
+        Expr::Lambda(params, _ret_type, body) => get_free_vars_lambda(params, body),
+        Expr::FnApp(func, args) => {
             get_free_vars_array(&concat_vectors(vector![*func.clone()], args.clone()))
         }
-        CExpr::Env(bindings) => {
+        Expr::Env(bindings) => {
             get_free_vars_array(&bindings.iter().map(|pair| pair.1.clone()).collect())
         }
-        CExpr::EnvGet(env_name, _var) => Ok(vector![env_name.clone()]),
-        CExpr::Begin(exps) => get_free_vars_array(exps),
-        CExpr::Set(_var, val) => get_free_vars(val),
-        CExpr::Cons(first, second) => get_free_vars(first).and_then(|vars1| {
+        Expr::EnvGet(env, _var) => get_free_vars(env),
+        Expr::Begin(exps) => get_free_vars_array(exps),
+        Expr::Set(_var, val) => get_free_vars(val),
+        Expr::Cons(first, second) => get_free_vars(first).and_then(|vars1| {
             get_free_vars(second).and_then(|vars2| Ok(concat_vectors(vars1, vars2)))
         }),
-        CExpr::Car(val) => get_free_vars(val.as_ref()),
-        CExpr::Cdr(val) => get_free_vars(val.as_ref()),
-        CExpr::IsNull(val) => get_free_vars(val.as_ref()),
-        CExpr::Null(_) => Ok(vector![]),
-        CExpr::Id(x) => Ok(vector![x.clone()]),
-        CExpr::Num(_) => Ok(vector![]),
-        CExpr::Bool(_) => Ok(vector![]),
-        CExpr::Str(_) => Ok(vector![]),
+        Expr::Car(val) => get_free_vars(val.as_ref()),
+        Expr::Cdr(val) => get_free_vars(val.as_ref()),
+        Expr::Tuple(vals, _typs) => get_free_vars_array(vals),
+        Expr::TupleGet(tuple, _key) => get_free_vars(tuple),
+        Expr::IsNull(val) => get_free_vars(val.as_ref()),
+        Expr::Null(_) => Ok(vector![]),
+        Expr::Id(x) => Ok(vector![x.clone()]),
+        Expr::Num(_) => Ok(vector![]),
+        Expr::Bool(_) => Ok(vector![]),
+        Expr::Str(_) => Ok(vector![]),
     }
 }
 
 fn get_free_vars_lambda(
     params: &Vector<(String, Type)>,
-    body: &CExpr,
+    body: &Expr,
 ) -> Result<Vector<String>, ClosureConvertError> {
     let param_vars: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
     let mut free_vars: Vector<String> = match get_free_vars(body) {
@@ -346,24 +342,23 @@ fn get_free_vars_lambda(
     Ok(free_vars)
 }
 
-pub fn closure_convert(exp: &Expr) -> Result<CExpr, ClosureConvertError> {
+pub fn closure_convert(exp: &Expr) -> Result<Expr, ClosureConvertError> {
     cc(exp, &TypeEnv::new())
 }
 
-fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<CExpr, ClosureConvertError> {
+fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
     match exp {
-        Expr::Num(x) => Ok(CExpr::Num(*x)),
-        Expr::Bool(x) => Ok(CExpr::Bool(*x)),
-        Expr::Str(x) => Ok(CExpr::Str(x.clone())),
-        Expr::Id(x) => Ok(CExpr::Id(x.clone())),
+        Expr::Num(x) => Ok(Expr::Num(*x)),
+        Expr::Bool(x) => Ok(Expr::Bool(*x)),
+        Expr::Str(x) => Ok(Expr::Str(x.clone())),
+        Expr::Id(x) => Ok(Expr::Id(x.clone())),
         Expr::Binop(op, arg1, arg2) => cc(arg1, env).and_then(|carg1| {
-            cc(arg2, env)
-                .and_then(|carg2| Ok(CExpr::Binop(*op, Box::from(carg1), Box::from(carg2))))
+            cc(arg2, env).and_then(|carg2| Ok(Expr::Binop(*op, Box::from(carg1), Box::from(carg2))))
         }),
         Expr::If(pred, cons, alt) => cc(pred, env).and_then(|cpred| {
             cc(cons, env).and_then(|ccons| {
                 cc(alt, env).and_then(|calt| {
-                    Ok(CExpr::If(
+                    Ok(Expr::If(
                         Box::from(cpred),
                         Box::from(ccons),
                         Box::from(calt),
@@ -387,33 +382,44 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<CExpr, ClosureConvertError> {
             };
             cc_bindings(bindings, env).and_then(|cbindings| {
                 cc(body, &env.add_bindings(binding_type_map))
-                    .and_then(|cbody| Ok(CExpr::Let(cbindings, Box::from(cbody))))
+                    .and_then(|cbody| Ok(Expr::Let(cbindings, Box::from(cbody))))
             })
         }
         Expr::Lambda(params, ret_typ, body) => cc_lambda(params, ret_typ, body, env),
         Expr::Begin(exps) => {
-            let cexps: Result<Vector<CExpr>, ClosureConvertError> =
+            let cexps_wrapped: Result<Vector<Expr>, ClosureConvertError> =
                 exps.iter().map(|subexp| cc(&subexp, env)).collect();
-            cexps.and_then(|cexps| Ok(CExpr::Begin(cexps)))
+            cexps_wrapped.and_then(|cexps| Ok(Expr::Begin(cexps)))
         }
-        Expr::Set(sym, val) => {
-            cc(val, env).and_then(|cval| Ok(CExpr::Set(sym.clone(), Box::from(cval))))
+        Expr::Set(id, val) => {
+            cc(val, env).and_then(|cval| Ok(Expr::Set(id.clone(), Box::from(cval))))
         }
         Expr::Cons(first, rest) => cc(first, env).and_then(|cfirst| {
-            cc(rest, env).and_then(|crest| Ok(CExpr::Cons(Box::from(cfirst), Box::from(crest))))
+            cc(rest, env).and_then(|crest| Ok(Expr::Cons(Box::from(cfirst), Box::from(crest))))
         }),
-        Expr::Car(val) => cc(val, env).and_then(|cval| Ok(CExpr::Car(Box::from(cval)))),
-        Expr::Cdr(val) => cc(val, env).and_then(|cval| Ok(CExpr::Cdr(Box::from(cval)))),
-        Expr::IsNull(val) => cc(val, env).and_then(|cval| Ok(CExpr::IsNull(Box::from(cval)))),
-        Expr::Null(typ) => Ok(CExpr::Null(typ.clone())),
-        Expr::Tuple(_, _) => Err(ClosureConvertError::from("Unimplemented.")),
-        Expr::TupleGet(_, _) => Err(ClosureConvertError::from("Unimplemented.")),
+        Expr::Car(val) => cc(val, env).and_then(|cval| Ok(Expr::Car(Box::from(cval)))),
+        Expr::Cdr(val) => cc(val, env).and_then(|cval| Ok(Expr::Cdr(Box::from(cval)))),
+        Expr::IsNull(val) => cc(val, env).and_then(|cval| Ok(Expr::IsNull(Box::from(cval)))),
+        Expr::Null(typ) => Ok(Expr::Null(typ.clone())),
+        Expr::Tuple(exps, typs) => {
+            let cexps_wrapped: Result<Vector<Expr>, ClosureConvertError> =
+                exps.iter().map(|subexp| cc(&subexp, env)).collect();
+            cexps_wrapped.and_then(|cexps| Ok(Expr::Tuple(cexps, typs.clone())))
+        }
+        Expr::TupleGet(tuple, key) => {
+            cc(tuple, env).and_then(|ctuple| Ok(Expr::TupleGet(Box::from(ctuple), key.clone())))
+        }
+        Expr::Env(bindings) => {
+            cc_bindings(bindings, env).and_then(|cbindings| Ok(Expr::Env(cbindings)))
+        }
+        Expr::EnvGet(clos_env, key) => cc(clos_env, env)
+            .and_then(|cclos_env| Ok(Expr::EnvGet(Box::from(cclos_env), key.clone()))),
         Expr::FnApp(func, args) => {
-            let cargs: Vector<CExpr> = match args.iter().map(|arg| cc(&arg, env)).collect() {
+            let cargs: Vector<Expr> = match args.iter().map(|arg| cc(&arg, env)).collect() {
                 Ok(val) => val,
                 Err(e) => return Err(e),
             };
-            cc(func, env).and_then(|cfunc| Ok(CExpr::ClosureApp(Box::from(cfunc), cargs)))
+            cc(func, env).and_then(|cfunc| Ok(Expr::FnApp(Box::from(cfunc), cargs)))
         }
     }
 }

@@ -65,6 +65,8 @@ pub enum Expr {
     FnApp(Box<Expr>, Vector<Expr>),    // func, arguments
     Tuple(Vector<Expr>, Vector<Type>), // list of expressions, type annotation
     TupleGet(Box<Expr>, Box<Expr>),    // env, index - index must explicitly be a number
+    Env(Vector<(String, Expr)>),       // map from var_name to exp
+    EnvGet(Box<Expr>, String),         // env, key
     Id(String),
     Num(i64),
     Bool(bool),
@@ -80,8 +82,7 @@ impl std::fmt::Display for Expr {
             Expr::Let(bindings, body) => {
                 let mut bindings_str = String::new();
                 for pair in bindings {
-                    bindings_str.push_str(format!("({} {})", pair.0, pair.1).as_str());
-                    bindings_str.push_str(" ");
+                    bindings_str.push_str(format!("({} {}) ", pair.0, pair.1).as_str());
                 }
                 bindings_str.pop();
                 write!(f, "(let ({}) {})", bindings_str, body)
@@ -89,10 +90,9 @@ impl std::fmt::Display for Expr {
             Expr::Lambda(params, ret_type, body) => {
                 let mut params_str = String::new();
                 for pair in params {
-                    params_str.push_str(format!("({} : {})", pair.0, pair.1).as_str());
-                    params_str.push_str(" ");
+                    params_str.push_str(format!("({} : {}) ", pair.0, pair.1).as_str());
                 }
-                if params.len() > 0 {
+                if !params.is_empty() {
                     params_str.pop();
                 }
                 write!(f, "(lambda ({}) : {} {})", params_str, ret_type, body)
@@ -100,18 +100,24 @@ impl std::fmt::Display for Expr {
             Expr::FnApp(func, args) => {
                 let mut args_str = String::new();
                 for arg in args {
-                    args_str.push_str(" ");
-                    args_str.push_str(format!("{}", arg).as_str());
+                    args_str.push_str(format!(" {}", arg).as_str());
                 }
                 write!(f, "({}{})", func, args_str)
             }
+            Expr::Env(bindings) => {
+                let mut bindings_str = String::new();
+                for binding in bindings {
+                    bindings_str.push_str(format!(" ({} {})", binding.0, binding.1).as_str());
+                }
+                write!(f, "(make-env {})", bindings_str)
+            }
+            Expr::EnvGet(clos_env, key) => write!(f, "(env-ref {} {})", clos_env, key),
             Expr::Begin(exps) => {
                 let mut exps_str = String::new();
                 for exp in exps {
-                    exps_str.push_str(" ");
-                    exps_str.push_str(format!("{}", exp).as_str());
+                    exps_str.push_str(format!(" {}", exp).as_str());
                 }
-                write!(f, "({})", exps_str)
+                write!(f, "(begin {})", exps_str)
             }
             Expr::Set(var_name, exp) => write!(f, "(set! {} {})", var_name, exp),
             Expr::Cons(first, second) => write!(f, "(cons {} {})", first, second),
@@ -122,15 +128,13 @@ impl std::fmt::Display for Expr {
             Expr::Tuple(exps, typs) => {
                 let mut exps_str = String::new();
                 for exp in exps {
-                    exps_str.push_str(" ");
-                    exps_str.push_str(format!("{}", exp).as_str());
+                    exps_str.push_str(format!(" {}", exp).as_str());
                 }
                 let mut typs_str = String::new();
                 for typ in typs {
-                    typs_str.push_str(format!("{}", typ).as_str());
-                    typs_str.push_str(" ")
+                    typs_str.push_str(format!("{} ", typ).as_str());
                 }
-                if typs.len() > 0 {
+                if !typs.is_empty() {
                     typs_str.pop();
                 }
                 write!(f, "(make-tuple{} : ({}))", exps_str, typs_str)

@@ -366,6 +366,8 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
         Expr::If(pred, cons, alt) => tc_if_with_env(pred, cons, alt, env),
         Expr::Let(bindings, body) => tc_let_with_env(bindings, body, env),
         Expr::Lambda(params, ret_typ, body) => tc_lambda_with_env(params, ret_typ, body, env),
+        Expr::Env(_bindings) => Ok(Type::Unknown), // TODO: Implement
+        Expr::EnvGet(_clos_env, _key) => Ok(Type::Unknown), // TODO: Implement
         Expr::Begin(exps) => tc_begin_with_env(exps, env),
         Expr::Set(sym, exp) => tc_set_bang_with_env(sym, exp, env),
         Expr::Cons(first, rest) => tc_cons_with_env(first, rest, env),

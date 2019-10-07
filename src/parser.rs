@@ -35,6 +35,7 @@ fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
             "int" => Ok(Type::Int),
             "bool" => Ok(Type::Bool),
             "string" => Ok(Type::Str),
+            "unknown" => Ok(Type::Unknown),
             _ => Err(ParseError::from(
                 "Type annotation not recognized as a valid type.",
             )),
@@ -298,6 +299,47 @@ fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     Ok(Expr::Lambda(args, ret_type, Box::from(body)))
 }
 
+fn parse_make_env(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    let parsed_bindings: Result<Vector<(String, Expr)>, ParseError> = rest
+        .iter()
+        .map(|binding| {
+            let binding_vec = match binding.to_vec() {
+                Some(vec) => vec,
+                None => return Err(ParseError::from("Make-env binding is not a valid list.")),
+            };
+            if binding_vec.len() != 2 {
+                return Err(ParseError::from(
+                    "Make-env binding is missing values or contains extra values.",
+                ));
+            }
+
+            binding_vec[0]
+                .as_symbol()
+                .ok_or_else(|| ParseError::from("Make-env binding does not have a valid name."))
+                .and_then(|binding_name| {
+                    parse(&binding_vec[1])
+                        .and_then(|binding_val| Ok((String::from(binding_name), binding_val)))
+                })
+        })
+        .collect();
+    parsed_bindings.and_then(|bindings_vec| Ok(Expr::Env(bindings_vec)))
+}
+
+fn parse_get_env(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 2 {
+        parse(&rest[0]).and_then(|env| {
+            rest[1]
+                .as_symbol()
+                .ok_or_else(|| ParseError::from("Env-ref key is not a valid identifier."))
+                .and_then(|key| Ok(Expr::EnvGet(Box::from(env), String::from(key))))
+        })
+    } else {
+        Err(ParseError::from(
+            "Env-ref expression has incorrect number of arguments.",
+        ))
+    }
+}
+
 fn parse_begin(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     if !rest.is_empty() {
         match parse_array(&rest) {
@@ -485,6 +527,8 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                     "if" => parse_if(&rest),
                     "let" => parse_let(&rest),
                     "lambda" => parse_lambda(&rest),
+                    "make-env" => parse_make_env(&rest),
+                    "env-ref" => parse_get_env(&rest),
                     "begin" => parse_begin(&rest),
                     "set!" => parse_set_bang(&rest),
                     "cons" => parse_cons(&rest),
