@@ -1,4 +1,4 @@
-use crate::common::{BinOp, Expr, Type, TypeEnv};
+use crate::common::{BinOp, Expr, ExprKind, Type, TypeEnv};
 use im_rc::Vector;
 
 #[derive(Clone, Debug)]
@@ -301,10 +301,10 @@ fn tc_tuple_get_with_env(
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
     tc_with_env(tup, env).and_then(|tup_typ| match tup_typ {
-        Type::Tuple(vec) => match key {
-            Expr::Num(x) => {
-                if (*x as usize) < vec.len() {
-                    Ok(vec[*x as usize].clone())
+        Type::Tuple(vec) => match key.kind {
+            ExprKind::Num(x) => {
+                if (x as usize) < vec.len() {
+                    Ok(vec[x as usize].clone())
                 } else {
                     Err(TypeCheckError::from(
                         "Value in get-n is too large for the provided tuple.",
@@ -354,30 +354,32 @@ fn tc_array_with_env(
 }
 
 pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCheckError> {
-    match value {
-        Expr::Num(_) => Ok(Type::Int),
-        Expr::Bool(_) => Ok(Type::Bool),
-        Expr::Str(_) => Ok(Type::Str),
-        Expr::Id(sym) => match env.find(sym) {
+    match &value.kind {
+        ExprKind::Num(_) => Ok(Type::Int),
+        ExprKind::Bool(_) => Ok(Type::Bool),
+        ExprKind::Str(_) => Ok(Type::Str),
+        ExprKind::Id(sym) => match env.find(sym.as_str()) {
             Some(val) => Ok(val.clone()),
             None => Err(TypeCheckError::from("Not a recognized function name.")),
         },
-        Expr::Binop(op, arg1, arg2) => tc_binop_with_env(*op, arg1, arg2, env),
-        Expr::If(pred, cons, alt) => tc_if_with_env(pred, cons, alt, env),
-        Expr::Let(bindings, body) => tc_let_with_env(bindings, body, env),
-        Expr::Lambda(params, ret_typ, body) => tc_lambda_with_env(params, ret_typ, body, env),
-        Expr::Env(_bindings) => Ok(Type::Unknown), // TODO: Implement
-        Expr::EnvGet(_clos_env, _key) => Ok(Type::Unknown), // TODO: Implement
-        Expr::Begin(exps) => tc_begin_with_env(exps, env),
-        Expr::Set(sym, exp) => tc_set_bang_with_env(sym, exp, env),
-        Expr::Cons(first, rest) => tc_cons_with_env(first, rest, env),
-        Expr::Car(exp) => tc_car_with_env(exp, env),
-        Expr::Cdr(exp) => tc_cdr_with_env(exp, env),
-        Expr::IsNull(exp) => tc_is_null_with_env(exp, env),
-        Expr::Null(typ) => Ok(Type::List(Box::from(typ.clone()))),
-        Expr::Tuple(exps, typs) => tc_tuple_with_env(exps, typs, env),
-        Expr::TupleGet(tup, key) => tc_tuple_get_with_env(tup, key, env),
-        Expr::FnApp(func, args) => tc_apply_with_env(func, args, env),
+        ExprKind::Binop(op, arg1, arg2) => tc_binop_with_env(*op, &arg1, &arg2, env),
+        ExprKind::If(pred, cons, alt) => tc_if_with_env(&pred, &cons, &alt, env),
+        ExprKind::Let(bindings, body) => tc_let_with_env(&bindings, &body, env),
+        ExprKind::Lambda(params, ret_typ, body) => {
+            tc_lambda_with_env(&params, &ret_typ, &body, env)
+        }
+        ExprKind::Env(_bindings) => Ok(Type::Unknown), // TODO: Implement
+        ExprKind::EnvGet(_clos_env, _key) => Ok(Type::Unknown), // TODO: Implement
+        ExprKind::Begin(exps) => tc_begin_with_env(&exps, env),
+        ExprKind::Set(sym, exp) => tc_set_bang_with_env(&sym, &exp, env),
+        ExprKind::Cons(first, rest) => tc_cons_with_env(&first, &rest, env),
+        ExprKind::Car(exp) => tc_car_with_env(&exp, env),
+        ExprKind::Cdr(exp) => tc_cdr_with_env(&exp, env),
+        ExprKind::IsNull(exp) => tc_is_null_with_env(&exp, env),
+        ExprKind::Null(typ) => Ok(Type::List(Box::from(typ.clone()))),
+        ExprKind::Tuple(exps, typs) => tc_tuple_with_env(&exps, &typs, env),
+        ExprKind::TupleGet(tup, key) => tc_tuple_get_with_env(&tup, &key, env),
+        ExprKind::FnApp(func, args) => tc_apply_with_env(&func, &args, env),
     }
 }
 

@@ -50,7 +50,22 @@ impl std::fmt::Display for Type {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Expr {
+pub struct Expr {
+    pub checked_type: Type,
+    pub kind: ExprKind,
+}
+
+impl Expr {
+    pub fn new(kind: ExprKind) -> Expr {
+        Expr {
+            checked_type: Type::Unknown,
+            kind,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExprKind {
     Binop(BinOp, Box<Expr>, Box<Expr>),     // operator, arg1, arg2
     If(Box<Expr>, Box<Expr>, Box<Expr>),    // pred, consequent, alternate
     Let(Vector<(String, Expr)>, Box<Expr>), // variable bindings, body
@@ -76,10 +91,10 @@ pub enum Expr {
 // TODO: Finish implementation
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Expr::Binop(op, exp1, exp2) => write!(f, "({} {} {})", op, exp1, exp2),
-            Expr::If(pred, cons, alt) => write!(f, "(if {} {} {})", pred, cons, alt),
-            Expr::Let(bindings, body) => {
+        match &self.kind {
+            ExprKind::Binop(op, exp1, exp2) => write!(f, "({} {} {})", op, exp1, exp2),
+            ExprKind::If(pred, cons, alt) => write!(f, "(if {} {} {})", pred, cons, alt),
+            ExprKind::Let(bindings, body) => {
                 let mut bindings_str = String::new();
                 for pair in bindings {
                     bindings_str.push_str(format!("({} {}) ", pair.0, pair.1).as_str());
@@ -87,7 +102,7 @@ impl std::fmt::Display for Expr {
                 bindings_str.pop();
                 write!(f, "(let ({}) {})", bindings_str, body)
             }
-            Expr::Lambda(params, ret_type, body) => {
+            ExprKind::Lambda(params, ret_type, body) => {
                 let mut params_str = String::new();
                 for pair in params {
                     params_str.push_str(format!("({} : {}) ", pair.0, pair.1).as_str());
@@ -97,35 +112,35 @@ impl std::fmt::Display for Expr {
                 }
                 write!(f, "(lambda ({}) : {} {})", params_str, ret_type, body)
             }
-            Expr::FnApp(func, args) => {
+            ExprKind::FnApp(func, args) => {
                 let mut args_str = String::new();
                 for arg in args {
                     args_str.push_str(format!(" {}", arg).as_str());
                 }
                 write!(f, "({}{})", func, args_str)
             }
-            Expr::Env(bindings) => {
+            ExprKind::Env(bindings) => {
                 let mut bindings_str = String::new();
                 for binding in bindings {
                     bindings_str.push_str(format!(" ({} {})", binding.0, binding.1).as_str());
                 }
                 write!(f, "(make-env {})", bindings_str)
             }
-            Expr::EnvGet(clos_env, key) => write!(f, "(env-ref {} {})", clos_env, key),
-            Expr::Begin(exps) => {
+            ExprKind::EnvGet(clos_env, key) => write!(f, "(env-ref {} {})", clos_env, key),
+            ExprKind::Begin(exps) => {
                 let mut exps_str = String::new();
                 for exp in exps {
                     exps_str.push_str(format!(" {}", exp).as_str());
                 }
                 write!(f, "(begin {})", exps_str)
             }
-            Expr::Set(var_name, exp) => write!(f, "(set! {} {})", var_name, exp),
-            Expr::Cons(first, second) => write!(f, "(cons {} {})", first, second),
-            Expr::Car(exp) => write!(f, "(car {})", exp),
-            Expr::Cdr(exp) => write!(f, "(cdr {})", exp),
-            Expr::IsNull(exp) => write!(f, "(null? {})", exp),
-            Expr::Null(typ) => write!(f, "(null {})", typ),
-            Expr::Tuple(exps, typs) => {
+            ExprKind::Set(var_name, exp) => write!(f, "(set! {} {})", var_name, exp),
+            ExprKind::Cons(first, second) => write!(f, "(cons {} {})", first, second),
+            ExprKind::Car(exp) => write!(f, "(car {})", exp),
+            ExprKind::Cdr(exp) => write!(f, "(cdr {})", exp),
+            ExprKind::IsNull(exp) => write!(f, "(null? {})", exp),
+            ExprKind::Null(typ) => write!(f, "(null {})", typ),
+            ExprKind::Tuple(exps, typs) => {
                 let mut exps_str = String::new();
                 for exp in exps {
                     exps_str.push_str(format!(" {}", exp).as_str());
@@ -139,11 +154,11 @@ impl std::fmt::Display for Expr {
                 }
                 write!(f, "(make-tuple{} : ({}))", exps_str, typs_str)
             }
-            Expr::TupleGet(tup, key) => write!(f, "(get-nth {} {})", tup, key),
-            Expr::Id(val) => write!(f, "{}", val),
-            Expr::Num(val) => write!(f, "{}", val),
-            Expr::Bool(val) => write!(f, "{}", if *val { "true" } else { "false" }),
-            Expr::Str(val) => write!(f, "\"{}\"", val),
+            ExprKind::TupleGet(tup, key) => write!(f, "(get-nth {} {})", tup, key),
+            ExprKind::Id(val) => write!(f, "{}", val),
+            ExprKind::Num(val) => write!(f, "{}", val),
+            ExprKind::Bool(val) => write!(f, "{}", if *val { "true" } else { "false" }),
+            ExprKind::Str(val) => write!(f, "\"{}\"", val),
         }
     }
 }
