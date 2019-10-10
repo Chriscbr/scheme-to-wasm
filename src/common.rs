@@ -1,31 +1,18 @@
+use crate::util::format_vector;
 use im_rc::Vector;
-
-/// Prints a vector as space separated values
-fn format_vector<T: Clone + std::fmt::Display>(arr: Vector<T>) -> String {
-    if arr.is_empty() {
-        String::new()
-    } else {
-        let mut result = String::new();
-        for typ in arr {
-            result.push_str(format!("{}", typ).as_str());
-            result.push_str(" ");
-        }
-        result.pop();
-        result
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Int,
     Bool,
     Str,
-    List(Box<Type>),               // homogenous list
-    Func(Vector<Type>, Box<Type>), // array of input types, and a return type
-    Tuple(Vector<Type>),           // array of types
-    Exists(u64, Box<Type>),        // abstract type T, and base type in terms of T
-    TypeVar(u64),                  // abstract type T
-    Unknown,                       // placeholder
+    List(Box<Type>),                // homogenous list
+    Func(Vector<Type>, Box<Type>),  // array of input types, and a return type
+    Tuple(Vector<Type>),            // array of types
+    Record(Vector<(String, Type)>), // array of bindings
+    Exists(u64, Box<Type>),         // abstract type T, and base type in terms of T
+    TypeVar(u64),                   // abstract type T
+    Unknown,                        // placeholder
 }
 
 impl std::fmt::Display for Type {
@@ -39,17 +26,15 @@ impl std::fmt::Display for Type {
                 write!(f, "(-> {} {})", format_vector(in_typs.clone()), ret_typ)
             }
             Type::Tuple(typs) => write!(f, "(tuple {})", format_vector(typs.clone())),
+            Type::Record(bindings) => {
+                let bindings_str_vec = bindings
+                    .iter()
+                    .map(|pair| format!("({} {}) ", pair.0, pair.1))
+                    .collect();
+                write!(f, "(record {})", format_vector(bindings_str_vec))
+            }
             Type::Exists(typ_var, base) => write!(f, "(exists T{} {})", typ_var, base),
             Type::TypeVar(id) => write!(f, "T{}", id),
-            // // TODO: add existential types properly
-            // Type::Env(typs) => {
-            //     let mut typs_str = String::new();
-            //     for typ in typs {
-            //         typs_str.push_str(" ");
-            //         typs_str.push_str(format!("{}", typ).as_str());
-            //     }
-            //     write!(f, "(env ({}))", typs_str)
-            // }
             Type::Unknown => write!(f, "unknown"),
         }
     }
@@ -86,16 +71,15 @@ pub enum ExprKind {
     FnApp(Box<Expr>, Vector<Expr>),    // func, arguments
     Tuple(Vector<Expr>, Vector<Type>), // list of expressions, type annotation
     TupleGet(Box<Expr>, Box<Expr>),    // env, index - index must explicitly be a number
-    Env(Vector<(String, Expr)>),       // map from var_name to exp
-    EnvGet(Box<Expr>, String),         // env, key
     Pack(Box<Expr>, Type, Type),       // exp, type substitution, existential type
+    Record(Vector<(String, Expr)>),    // map from values to labels
+    RecordGet(Box<Expr>, String),      // record, label
     Id(String),
     Num(i64),
     Bool(bool),
     Str(String),
 }
 
-// TODO: Finish implementation
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
@@ -122,14 +106,14 @@ impl std::fmt::Display for Expr {
                 )
             }
             ExprKind::FnApp(func, args) => write!(f, "({} {})", func, format_vector(args.clone())),
-            ExprKind::Env(bindings) => {
+            ExprKind::Record(bindings) => {
                 let bindings_str_vec = bindings
                     .iter()
                     .map(|pair| format!("({} {}) ", pair.0, pair.1))
                     .collect();
-                write!(f, "(make-env {})", format_vector(bindings_str_vec))
+                write!(f, "(make-record {})", format_vector(bindings_str_vec))
             }
-            ExprKind::EnvGet(clos_env, key) => write!(f, "(env-ref {} {})", clos_env, key),
+            ExprKind::RecordGet(record, key) => write!(f, "(record-ref {} {})", record, key),
             ExprKind::Begin(exps) => write!(f, "(begin {})", format_vector(exps.clone())),
             ExprKind::Set(var_name, exp) => write!(f, "(set! {} {})", var_name, exp),
             ExprKind::Cons(first, second) => write!(f, "(cons {} {})", first, second),
@@ -143,7 +127,7 @@ impl std::fmt::Display for Expr {
                 format_vector(exps.clone()),
                 format_vector(typs.clone())
             ),
-            ExprKind::TupleGet(tup, key) => write!(f, "(get-nth {} {})", tup, key),
+            ExprKind::TupleGet(tup, key) => write!(f, "(tuple-ref {} {})", tup, key),
             ExprKind::Pack(val, sub, exist) => write!(f, "(pack {} {} {})", val, sub, exist), // TODO: change syntax?
             ExprKind::Id(val) => write!(f, "{}", val),
             ExprKind::Num(val) => write!(f, "{}", val),

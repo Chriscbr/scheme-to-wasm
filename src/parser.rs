@@ -65,6 +65,7 @@ pub fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
                 Some("->") => parse_func_annotation(lst_vec),
                 Some("list") => parse_list_annotation(lst_vec),
                 Some("tuple") => parse_tuple_annotation(lst_vec),
+                Some("record") => parse_record_annotation(lst_vec),
                 Some("exists") => parse_exists_annotation(lst_vec),
                 _ => Err(ParseError::from(
                     r#"Type annotation does not have "->", "tuple", or "list" as first symbol."#,
@@ -124,6 +125,38 @@ fn parse_tuple_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError
         Err(e) => return Err(e),
     };
     Ok(Type::Tuple(Vector::from(tuple_types_unwrapped)))
+}
+
+fn parse_record_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
+    let record_types: Result<Vec<(String, Type)>, ParseError> = lst_vec[1..(lst_vec.len())]
+        .iter()
+        .map(|exp| match exp.to_vec() {
+            Some(binding) => {
+                if binding.len() != 2 {
+                    return Err(ParseError::from(
+                        "Record type binding has incorrect number of values.",
+                    ));
+                }
+                let label = match binding[0].as_symbol() {
+                    Some(val) => String::from(val),
+                    None => return Err(ParseError::from("Record type label is not a valid name.")),
+                };
+                let typ = match parse_type(&binding[1]) {
+                    Ok(val) => val,
+                    Err(e) => return Err(e),
+                };
+                Ok((label, typ))
+            }
+            None => Err(ParseError::from(
+                "Record type binding is not a proper list of values.",
+            )),
+        })
+        .collect();
+    let record_types_unwrapped = match record_types {
+        Ok(val) => val,
+        Err(e) => return Err(e),
+    };
+    Ok(Type::Record(Vector::from(record_types_unwrapped)))
 }
 
 fn parse_exists_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
@@ -206,10 +239,6 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, Par
         })
         .collect()
 }
-
-//
-// Parsing functions
-//
 
 fn parse_array(exps: &[lexpr::Value]) -> Result<Vector<Expr>, ParseError> {
     exps.iter().map(|exp| parse(exp)).collect()
@@ -344,41 +373,45 @@ fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     Ok(Expr::new(ExprKind::Lambda(args, ret_type, Box::from(body))))
 }
 
-fn parse_make_env(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+fn parse_make_record(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let parsed_bindings: Result<Vector<(String, Expr)>, ParseError> = rest
         .iter()
         .map(|binding| {
             let binding_vec = match binding.to_vec() {
                 Some(vec) => vec,
-                None => return Err(ParseError::from("Make-env binding is not a valid list.")),
+                None => {
+                    return Err(ParseError::from(
+                        "Value in make-record expression is not a valid list.",
+                    ))
+                }
             };
             if binding_vec.len() != 2 {
                 return Err(ParseError::from(
-                    "Make-env binding is missing values or contains extra values.",
+                    "Value in make-record expression is incomplete or contains extra values.",
                 ));
             }
 
             binding_vec[0]
                 .as_symbol()
-                .ok_or_else(|| ParseError::from("Make-env binding does not have a valid name."))
+                .ok_or_else(|| ParseError::from("Make-record binding does not have a valid name."))
                 .and_then(|binding_name| {
                     parse(&binding_vec[1])
                         .and_then(|binding_val| Ok((String::from(binding_name), binding_val)))
                 })
         })
         .collect();
-    parsed_bindings.and_then(|bindings_vec| Ok(Expr::new(ExprKind::Env(bindings_vec))))
+    parsed_bindings.and_then(|bindings_vec| Ok(Expr::new(ExprKind::Record(bindings_vec))))
 }
 
-fn parse_get_env(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+fn parse_get_record(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     if rest.len() == 2 {
-        parse(&rest[0]).and_then(|env| {
+        parse(&rest[0]).and_then(|bindings| {
             rest[1]
                 .as_symbol()
                 .ok_or_else(|| ParseError::from("Env-ref key is not a valid identifier."))
                 .and_then(|key| {
-                    Ok(Expr::new(ExprKind::EnvGet(
-                        Box::from(env),
+                    Ok(Expr::new(ExprKind::RecordGet(
+                        Box::from(bindings),
                         String::from(key),
                     )))
                 })
@@ -550,7 +583,7 @@ fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         })
     } else {
         Err(ParseError::from(
-            "get-n expression has incorrect number of arguments.",
+            "tuple-ref expression has incorrect number of arguments.",
         ))
     }
 }
@@ -566,7 +599,7 @@ fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         })
     } else {
         Err(ParseError::from(
-            "get-n expression has incorrect number of arguments.",
+            "pack expression has incorrect number of arguments.",
         ))
     }
 }
@@ -601,8 +634,8 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                     "if" => parse_if(&rest),
                     "let" => parse_let(&rest),
                     "lambda" => parse_lambda(&rest),
-                    "make-env" => parse_make_env(&rest),
-                    "env-ref" => parse_get_env(&rest),
+                    "make-record" => parse_make_record(&rest),
+                    "record-ref" => parse_get_record(&rest),
                     "begin" => parse_begin(&rest),
                     "set!" => parse_set_bang(&rest),
                     "cons" => parse_cons(&rest),
@@ -611,7 +644,7 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                     "null?" => parse_is_null(&rest),
                     "null" => parse_null(&rest),
                     "make-tuple" => parse_make_tuple(&rest),
-                    "get-nth" => parse_get_tuple(&rest),
+                    "tuple-ref" => parse_get_tuple(&rest),
                     "pack" => parse_pack(&rest),
                     _ => parse_func(&first, &rest),
                 },
@@ -624,90 +657,5 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
             symbol => Ok(Expr::new(ExprKind::Id(symbol.to_string()))),
         },
         _ => Err(ParseError::from("Unrecognized form of expression found.")),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use im_rc::vector;
-
-    #[test]
-    fn test_parse_type() {
-        let exp = lexpr::from_str("int").unwrap();
-        assert_eq!(parse_type(&exp).unwrap(), Type::Int);
-
-        let exp = lexpr::from_str("bool").unwrap();
-        assert_eq!(parse_type(&exp).unwrap(), Type::Bool);
-
-        let exp = lexpr::from_str("string").unwrap();
-        assert_eq!(parse_type(&exp).unwrap(), Type::Str);
-
-        let exp = lexpr::from_str("T0").unwrap();
-        assert_eq!(parse_type(&exp).unwrap(), Type::TypeVar(0));
-
-        let exp = lexpr::from_str("T42").unwrap();
-        assert_eq!(parse_type(&exp).unwrap(), Type::TypeVar(42));
-
-        let exp = lexpr::from_str("(list int)").unwrap();
-        assert_eq!(parse_type(&exp).unwrap(), Type::List(Box::from(Type::Int)));
-
-        let exp = lexpr::from_str("(list (list int))").unwrap();
-        assert_eq!(
-            parse_type(&exp).unwrap(),
-            Type::List(Box::from(Type::List(Box::from(Type::Int))))
-        );
-
-        let exp = lexpr::from_str("(tuple)").unwrap();
-        assert_eq!(parse_type(&exp).unwrap(), Type::Tuple(vector![]));
-
-        let exp = lexpr::from_str("(tuple int)").unwrap();
-        assert_eq!(parse_type(&exp).unwrap(), Type::Tuple(vector![Type::Int]));
-
-        let exp = lexpr::from_str("(tuple int string)").unwrap();
-        assert_eq!(
-            parse_type(&exp).unwrap(),
-            Type::Tuple(vector![Type::Int, Type::Str])
-        );
-
-        let exp = lexpr::from_str("(-> int)").unwrap();
-        assert_eq!(
-            parse_type(&exp).unwrap(),
-            Type::Func(vector![], Box::from(Type::Int))
-        );
-
-        let exp = lexpr::from_str("(-> int int)").unwrap();
-        assert_eq!(
-            parse_type(&exp).unwrap(),
-            Type::Func(vector![Type::Int], Box::from(Type::Int))
-        );
-
-        let exp = lexpr::from_str("(-> string int bool)").unwrap();
-        assert_eq!(
-            parse_type(&exp).unwrap(),
-            Type::Func(vector![Type::Str, Type::Int], Box::from(Type::Bool))
-        );
-
-        let exp = lexpr::from_str("(-> (-> int int bool) int int bool)").unwrap();
-        assert_eq!(
-            parse_type(&exp).unwrap(),
-            Type::Func(
-                vector![
-                    Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Bool)),
-                    Type::Int,
-                    Type::Int
-                ],
-                Box::from(Type::Bool)
-            )
-        );
-
-        let exp = lexpr::from_str("(exists T0 (-> T0 bool))").unwrap();
-        assert_eq!(
-            parse_type(&exp).unwrap(),
-            Type::Exists(
-                0,
-                Box::from(Type::Func(vector![Type::TypeVar(0)], Box::from(Type::Bool)))
-            )
-        );
     }
 }

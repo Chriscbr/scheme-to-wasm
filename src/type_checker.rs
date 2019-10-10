@@ -273,7 +273,7 @@ fn tc_tuple_with_env(
             Ok(Type::Tuple(typs.clone()))
         } else {
             Err(TypeCheckError::from(
-                "Tuple values do not match provided type ascription.",
+                "Make-tuple values do not match provided type ascription.",
             ))
         }
     })
@@ -291,16 +291,58 @@ fn tc_tuple_get_with_env(
                     Ok(vec[x as usize].clone())
                 } else {
                     Err(TypeCheckError::from(
-                        "Value in get-n is too large for the provided tuple.",
+                        "Value in tuple-ref is too large for the provided tuple.",
                     ))
                 }
             }
             _ => Err(TypeCheckError::from(
-                "Second expression in get-n is not a number.",
+                "Second expression in tuple-ref is not a number.",
             )),
         },
         _ => Err(TypeCheckError::from(
-            "First expression in get-n is not a tuple.",
+            "First expression in tuple-ref is not a tuple.",
+        )),
+    })
+}
+
+fn tc_record_with_env(
+    bindings: &Vector<(String, Expr)>,
+    env: &mut TypeEnv<Type>,
+) -> Result<Type, TypeCheckError> {
+    let binding_types = bindings
+        .iter()
+        .map(|pair| match tc_with_env(&pair.1, env) {
+            Ok(val) => Ok((pair.0.clone(), val)),
+            Err(e) => Err(e),
+        })
+        .collect();
+    match binding_types {
+        Ok(val) => Ok(Type::Record(val)),
+        Err(e) => Err(e),
+    }
+}
+
+fn tc_record_get_with_env(
+    record: &Expr,
+    key: &str,
+    env: &mut TypeEnv<Type>,
+) -> Result<Type, TypeCheckError> {
+    tc_with_env(record, env).and_then(|record_typ| match record_typ {
+        Type::Record(bindings) => {
+            let matches: Vector<(String, Type)> = bindings
+                .iter()
+                .cloned()
+                .filter(|pair| pair.0 == *key)
+                .collect();
+            if matches.is_empty() {
+                return Err(TypeCheckError::from(
+                    "Key in record-get not found in record.",
+                ));
+            }
+            Ok(matches[0].1.clone())
+        }
+        _ => Err(TypeCheckError::from(
+            "First expression in record-ref is not a record.",
         )),
     })
 }
@@ -353,6 +395,16 @@ fn type_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Result<Typ
                 .map(|inner_typ| type_substitute(inner_typ, type_var, replace_with))
                 .collect();
             typs_vec.and_then(|styps| Ok(Type::Tuple(styps)))
+        }
+        Type::Record(bindings) => {
+            let bindings_vec: Result<Vector<(String, Type)>, TypeCheckError> = bindings
+                .iter()
+                .map(|pair| {
+                    type_substitute(&pair.1, type_var, replace_with)
+                        .and_then(|inner_typ| Ok((pair.0.clone(), inner_typ)))
+                })
+                .collect();
+            bindings_vec.and_then(|sbindings| Ok(Type::Record(sbindings)))
         }
         Type::Exists(inner_type_var, inner_typ) => {
             if *inner_type_var == type_var {
@@ -436,8 +488,8 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
         ExprKind::Lambda(params, ret_typ, body) => {
             tc_lambda_with_env(&params, &ret_typ, &body, env)
         }
-        ExprKind::Env(_bindings) => Ok(Type::Unknown), // TODO: Implement
-        ExprKind::EnvGet(_clos_env, _key) => Ok(Type::Unknown), // TODO: Implement
+        ExprKind::Record(bindings) => tc_record_with_env(bindings, env),
+        ExprKind::RecordGet(record, key) => tc_record_get_with_env(record, key, env),
         ExprKind::Begin(exps) => tc_begin_with_env(&exps, env),
         ExprKind::Set(sym, exp) => tc_set_bang_with_env(&sym, &exp, env),
         ExprKind::Cons(first, rest) => tc_cons_with_env(&first, &rest, env),

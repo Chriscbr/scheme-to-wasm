@@ -1,14 +1,8 @@
 use crate::common::{Expr, ExprKind, Type, TypeEnv};
 use crate::type_checker::type_check;
+use crate::util::concat_vectors;
 use im_rc::{vector, Vector};
 use std::sync::atomic::{AtomicU64, Ordering};
-
-/// Helper function that returns concatenation of two im_rc::Vector's
-fn concat_vectors<T: Clone>(vec1: Vector<T>, vec2: Vector<T>) -> Vector<T> {
-    let mut val = vec1.clone();
-    val.append(vec2);
-    val
-}
 
 pub static GENSYM_COUNT: AtomicU64 = AtomicU64::new(0);
 
@@ -86,7 +80,7 @@ fn cc_lambda(
         .iter()
         .map(|var| (var.clone(), Expr::new(ExprKind::Id(var.clone()))))
         .collect();
-    let new_env = Expr::new(ExprKind::Env(env_contents));
+    let new_env = Expr::new(ExprKind::Record(env_contents));
     let mut new_body: Expr = match cc(body, env) {
         Ok(val) => val,
         Err(e) => return Err(e),
@@ -95,7 +89,7 @@ fn cc_lambda(
         new_body = match substitute(
             &new_body,
             &var.clone(),
-            &Expr::new(ExprKind::EnvGet(
+            &Expr::new(ExprKind::RecordGet(
                 Box::from(Expr::new(ExprKind::Id(env_name.clone()))),
                 var.clone(),
             )),
@@ -200,7 +194,7 @@ fn substitute(
                     .and_then(|sargs| Ok(Expr::new(ExprKind::FnApp(Box::from(sfunc), sargs))))
             })
         }
-        ExprKind::Env(bindings) => {
+        ExprKind::Record(bindings) => {
             match bindings
                 .iter()
                 .map(|pair| {
@@ -209,15 +203,15 @@ fn substitute(
                 })
                 .collect()
             {
-                Ok(val) => Ok(Expr::new(ExprKind::Env(val))),
+                Ok(val) => Ok(Expr::new(ExprKind::Record(val))),
                 Err(e) => Err(e),
             }
         }
-        ExprKind::EnvGet(clos_env, var) => {
-            substitute(&clos_env, match_exp, replace_with).and_then(|sclos_env| {
-                Ok(Expr::new(ExprKind::EnvGet(
-                    Box::from(sclos_env),
-                    var.clone(),
+        ExprKind::RecordGet(record, key) => {
+            substitute(&record, match_exp, replace_with).and_then(|srecord| {
+                Ok(Expr::new(ExprKind::RecordGet(
+                    Box::from(srecord),
+                    key.clone(),
                 )))
             })
         }
@@ -249,7 +243,7 @@ fn substitute(
                 )))
             })
         }
-        ExprKind::Pack(val, sub, exist) => unimplemented!(),
+        ExprKind::Pack(val, sub, exist) => unimplemented!(), // TODO
         ExprKind::IsNull(val) => substitute(&val, match_exp, replace_with)
             .and_then(|sval| Ok(Expr::new(ExprKind::IsNull(Box::from(sval))))),
         ExprKind::Null(_) => Ok(exp.clone()),
@@ -300,10 +294,10 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         ExprKind::FnApp(func, args) => {
             get_free_vars_array(&concat_vectors(vector![*func.clone()], args.clone()))
         }
-        ExprKind::Env(bindings) => {
+        ExprKind::Record(bindings) => {
             get_free_vars_array(&bindings.iter().map(|pair| pair.1.clone()).collect())
         }
-        ExprKind::EnvGet(env, _var) => get_free_vars(&env),
+        ExprKind::RecordGet(record, key) => get_free_vars(&record),
         ExprKind::Begin(exps) => get_free_vars_array(&exps),
         ExprKind::Set(_var, val) => get_free_vars(&val),
         ExprKind::Cons(first, second) => get_free_vars(&first).and_then(|vars1| {
@@ -313,7 +307,7 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         ExprKind::Cdr(val) => get_free_vars(val.as_ref()),
         ExprKind::Tuple(vals, _typs) => get_free_vars_array(&vals),
         ExprKind::TupleGet(tuple, _key) => get_free_vars(&tuple),
-        ExprKind::Pack(val, sub, exist) => unimplemented!(),
+        ExprKind::Pack(val, sub, exist) => unimplemented!(), // TODO
         ExprKind::IsNull(val) => get_free_vars(val.as_ref()),
         ExprKind::Null(_) => Ok(vector![]),
         ExprKind::Id(x) => Ok(vector![x.clone()]),
@@ -424,15 +418,15 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                 key.clone(),
             )))
         }),
-        ExprKind::Env(bindings) => cc_bindings(&bindings, env)
-            .and_then(|cbindings| Ok(Expr::new(ExprKind::Env(cbindings)))),
-        ExprKind::EnvGet(clos_env, key) => cc(&clos_env, env).and_then(|cclos_env| {
-            Ok(Expr::new(ExprKind::EnvGet(
-                Box::from(cclos_env),
+        ExprKind::Record(bindings) => cc_bindings(&bindings, env)
+            .and_then(|cbindings| Ok(Expr::new(ExprKind::Record(cbindings)))),
+        ExprKind::RecordGet(record, key) => cc(&record, env).and_then(|crecord| {
+            Ok(Expr::new(ExprKind::RecordGet(
+                Box::from(crecord),
                 key.clone(),
             )))
         }),
-        ExprKind::Pack(val, sub, exist) => unimplemented!(),
+        ExprKind::Pack(val, sub, exist) => unimplemented!(), // TODO
         ExprKind::FnApp(func, args) => {
             let cargs: Vector<Expr> = match args.iter().map(|arg| cc(&arg, env)).collect() {
                 Ok(val) => val,

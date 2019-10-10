@@ -174,6 +174,10 @@ fn test_typecheck_lists_sad() {
 
 #[test]
 fn test_typecheck_tuples_happy() {
+    let exp = lexpr::from_str(r#"(make-tuple () : ())"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), Type::Tuple(vector![]));
+
     let exp = lexpr::from_str(r#"(make-tuple (3 "hello") : (int string))"#).unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(
@@ -181,11 +185,11 @@ fn test_typecheck_tuples_happy() {
         Type::Tuple(vector![Type::Int, Type::Str])
     );
 
-    let exp = lexpr::from_str(r#"(get-nth (make-tuple (3 "hello") : (int string)) 0)"#).unwrap();
+    let exp = lexpr::from_str(r#"(tuple-ref (make-tuple (3 "hello") : (int string)) 0)"#).unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).unwrap(), Type::Int);
 
-    let exp = lexpr::from_str(r#"(get-nth (make-tuple (3 "hello") : (int string)) 1)"#).unwrap();
+    let exp = lexpr::from_str(r#"(tuple-ref (make-tuple (3 "hello") : (int string)) 1)"#).unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).unwrap(), Type::Str);
 }
@@ -219,6 +223,69 @@ fn test_typecheck_tuples_sad() {
 
     // first expression is not a tuple
     let exp = lexpr::from_str(r#"(get-nth (cons 3 (null int)) 0)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+}
+
+#[test]
+fn test_typecheck_records_happy() {
+    let exp = lexpr::from_str(r#"(make-record)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), Type::Record(vector![]));
+
+    let exp = lexpr::from_str(r#"(make-record (num 3) (name "hello"))"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(
+        type_check(&exp).unwrap(),
+        Type::Record(vector![
+            (String::from("num"), Type::Int),
+            (String::from("name"), Type::Str)
+        ])
+    );
+
+    let exp = lexpr::from_str(r#"(let ((bar 3)) (make-record (foo bar)))"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(
+        type_check(&exp).unwrap(),
+        Type::Record(vector![(String::from("foo"), Type::Int)])
+    );
+
+    let exp = lexpr::from_str(r#"(record-ref (make-record (num 3) (name "hello")) num)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), Type::Int);
+
+    let exp = lexpr::from_str(r#"(record-ref (make-record (num 3) (name "hello")) name)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), Type::Str);
+}
+
+#[test]
+fn test_typecheck_records_sad() {
+    // we don't know what type bar is
+    let exp = lexpr::from_str(r#"(make-record (foo bar))"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    // TODO: In practice we shouldn't allow multiple of the same field for a record,
+    // but this isn't high priority to implement.
+
+    // // record contains duplicate values
+    // let exp = lexpr::from_str(r#"(make-record (num 3) (num 4))"#).unwrap();
+    // let exp = parse(&exp).unwrap();
+    // assert_eq!(type_check(&exp).is_err(), true);
+
+    // // record contains duplicate values (of different types)
+    // let exp = lexpr::from_str(r#"(make-record (num 3) (num "hello"))"#).unwrap();
+    // let exp = parse(&exp).unwrap();
+    // assert_eq!(type_check(&exp).is_err(), true);
+
+    // invalid key on record-ref
+    let exp = lexpr::from_str(r#"(record-ref (make-record (num 3) (name "hello")) foo)"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    // non-record expression passed to record-ref
+    let exp = lexpr::from_str(r#"(record-ref "hello" foo)"#).unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).is_err(), true);
 }
