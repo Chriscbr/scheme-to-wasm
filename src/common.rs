@@ -68,12 +68,12 @@ pub enum ExprKind {
     Cdr(Box<Expr>),
     IsNull(Box<Expr>),
     Null(Type),
-    FnApp(Box<Expr>, Vector<Expr>),    // func, arguments
-    Tuple(Vector<Expr>, Vector<Type>), // list of expressions, type annotation
-    TupleGet(Box<Expr>, Box<Expr>),    // env, index - index must explicitly be a number
-    Pack(Box<Expr>, Type, Type),       // exp, type substitution, existential type
-    Record(Vector<(String, Expr)>),    // map from values to labels
-    RecordGet(Box<Expr>, String),      // record, label
+    FnApp(Box<Expr>, Vector<Expr>), // func, arguments
+    Tuple(Vector<Expr>),            // list of expressions, type annotation
+    TupleGet(Box<Expr>, Box<Expr>), // env, index - index must explicitly be a number
+    Pack(Box<Expr>, Type, Type),    // exp, type substitution, existential type
+    Record(Vector<(String, Expr)>), // map from values to labels
+    RecordGet(Box<Expr>, String),   // record, label
     Id(String),
     Num(i64),
     Bool(bool),
@@ -121,12 +121,7 @@ impl std::fmt::Display for Expr {
             ExprKind::Cdr(exp) => write!(f, "(cdr {})", exp),
             ExprKind::IsNull(exp) => write!(f, "(null? {})", exp),
             ExprKind::Null(typ) => write!(f, "(null {})", typ),
-            ExprKind::Tuple(exps, typs) => write!(
-                f,
-                "(make-tuple {} : ({}))",
-                format_vector(exps.clone()),
-                format_vector(typs.clone())
-            ),
+            ExprKind::Tuple(exps) => write!(f, "(make-tuple {})", format_vector(exps.clone())),
             ExprKind::TupleGet(tup, key) => write!(f, "(tuple-ref {} {})", tup, key),
             ExprKind::Pack(val, sub, exist) => write!(f, "(pack {} {} {})", val, sub, exist), // TODO: change syntax?
             ExprKind::Id(val) => write!(f, "{}", val),

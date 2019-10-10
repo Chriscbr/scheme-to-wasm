@@ -105,12 +105,8 @@ fn cc_lambda(
         ret_type.clone(),
         Box::from(new_body),
     ));
-    let new_lambda_type = Type::Func(new_param_types, Box::from(ret_type.clone()));
-    // TODO: implement type of environments
-    Ok(Expr::new(ExprKind::Tuple(
-        vector![new_lambda, new_env],
-        vector![new_lambda_type, Type::Unknown],
-    )))
+    let _new_lambda_type = Type::Func(new_param_types, Box::from(ret_type.clone()));
+    Ok(Expr::new(ExprKind::Tuple(vector![new_lambda, new_env])))
 }
 
 fn substitute_array(
@@ -233,8 +229,8 @@ fn substitute(
             .and_then(|sval| Ok(Expr::new(ExprKind::Car(Box::from(sval))))),
         ExprKind::Cdr(val) => substitute(&val, match_exp, replace_with)
             .and_then(|sval| Ok(Expr::new(ExprKind::Cdr(Box::from(sval))))),
-        ExprKind::Tuple(vals, typs) => substitute_array(&vals, match_exp, replace_with)
-            .and_then(|svals| Ok(Expr::new(ExprKind::Tuple(svals, typs.clone())))),
+        ExprKind::Tuple(vals) => substitute_array(&vals, match_exp, replace_with)
+            .and_then(|svals| Ok(Expr::new(ExprKind::Tuple(svals)))),
         ExprKind::TupleGet(tuple, key) => {
             substitute(&tuple, match_exp, replace_with).and_then(|stuple| {
                 Ok(Expr::new(ExprKind::TupleGet(
@@ -297,7 +293,7 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         ExprKind::Record(bindings) => {
             get_free_vars_array(&bindings.iter().map(|pair| pair.1.clone()).collect())
         }
-        ExprKind::RecordGet(record, key) => get_free_vars(&record),
+        ExprKind::RecordGet(record, _key) => get_free_vars(&record),
         ExprKind::Begin(exps) => get_free_vars_array(&exps),
         ExprKind::Set(_var, val) => get_free_vars(&val),
         ExprKind::Cons(first, second) => get_free_vars(&first).and_then(|vars1| {
@@ -305,7 +301,7 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         }),
         ExprKind::Car(val) => get_free_vars(val.as_ref()),
         ExprKind::Cdr(val) => get_free_vars(val.as_ref()),
-        ExprKind::Tuple(vals, _typs) => get_free_vars_array(&vals),
+        ExprKind::Tuple(vals) => get_free_vars_array(&vals),
         ExprKind::TupleGet(tuple, _key) => get_free_vars(&tuple),
         ExprKind::Pack(val, sub, exist) => unimplemented!(), // TODO
         ExprKind::IsNull(val) => get_free_vars(val.as_ref()),
@@ -407,10 +403,10 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
             cc(&val, env).and_then(|cval| Ok(Expr::new(ExprKind::IsNull(Box::from(cval)))))
         }
         ExprKind::Null(typ) => Ok(Expr::new(ExprKind::Null(typ.clone()))),
-        ExprKind::Tuple(exps, typs) => {
+        ExprKind::Tuple(exps) => {
             let cexps_wrapped: Result<Vector<Expr>, ClosureConvertError> =
                 exps.iter().map(|subexp| cc(&subexp, env)).collect();
-            cexps_wrapped.and_then(|cexps| Ok(Expr::new(ExprKind::Tuple(cexps, typs.clone()))))
+            cexps_wrapped.and_then(|cexps| Ok(Expr::new(ExprKind::Tuple(cexps))))
         }
         ExprKind::TupleGet(tuple, key) => cc(&tuple, env).and_then(|ctuple| {
             Ok(Expr::new(ExprKind::TupleGet(

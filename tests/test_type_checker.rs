@@ -174,22 +174,22 @@ fn test_typecheck_lists_sad() {
 
 #[test]
 fn test_typecheck_tuples_happy() {
-    let exp = lexpr::from_str(r#"(make-tuple () : ())"#).unwrap();
+    let exp = lexpr::from_str(r#"(make-tuple)"#).unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).unwrap(), Type::Tuple(vector![]));
 
-    let exp = lexpr::from_str(r#"(make-tuple (3 "hello") : (int string))"#).unwrap();
+    let exp = lexpr::from_str(r#"(make-tuple 3 "hello")"#).unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(
         type_check(&exp).unwrap(),
         Type::Tuple(vector![Type::Int, Type::Str])
     );
 
-    let exp = lexpr::from_str(r#"(tuple-ref (make-tuple (3 "hello") : (int string)) 0)"#).unwrap();
+    let exp = lexpr::from_str(r#"(tuple-ref (make-tuple 3 "hello") 0)"#).unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).unwrap(), Type::Int);
 
-    let exp = lexpr::from_str(r#"(tuple-ref (make-tuple (3 "hello") : (int string)) 1)"#).unwrap();
+    let exp = lexpr::from_str(r#"(tuple-ref (make-tuple 3 "hello") 1)"#).unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).unwrap(), Type::Str);
 }

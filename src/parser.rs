@@ -525,50 +525,7 @@ fn parse_func(first: &lexpr::Value, rest: &[lexpr::Value]) -> Result<Expr, Parse
 }
 
 fn parse_make_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 3 {
-        let vals = match rest[0].to_vec() {
-            Some(val) => match parse_array(&val) {
-                Ok(arr) => arr,
-                Err(e) => return Err(e),
-            },
-            None => {
-                return Err(ParseError::from(
-                    "First argument in make-tuple expression is not a list.",
-                ))
-            }
-        };
-        // check there is a separator
-        let separator = match rest[1].as_symbol() {
-            Some(val) => val,
-            None => return Err(ParseError::from("Make-tuple expression does not have a separator between the arguments list and return type.")),
-        };
-        if separator != ":" {
-            return Err(ParseError::from("Make-tuple expression does not have the correct separator : between the arguments list and return type."));
-        }
-
-        let typs_vec_unparsed: Vec<lexpr::Value> = match rest[2].to_vec() {
-            Some(val) => val,
-            None => {
-                return Err(ParseError::from(
-                    "Make-tuple expression does not have a proper list of types.",
-                ))
-            }
-        };
-        let typs_vec: Vector<Type> = match typs_vec_unparsed
-            .iter()
-            .map(|typ| parse_type(typ))
-            .collect()
-        {
-            Ok(vals) => vals,
-            Err(e) => return Err(e),
-        };
-
-        Ok(Expr::new(ExprKind::Tuple(vals, typs_vec)))
-    } else {
-        Err(ParseError::from(
-            "Make-tuple expression has incorrect number of arguments.",
-        ))
-    }
+    parse_array(&rest).and_then(|vals| Ok(Expr::new(ExprKind::Tuple(vals))))
 }
 
 fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {

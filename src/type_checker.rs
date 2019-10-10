@@ -263,20 +263,8 @@ fn tc_cdr_with_env(exp: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeChec
     }
 }
 
-fn tc_tuple_with_env(
-    exps: &Vector<Expr>,
-    expected_typs: &Vector<Type>,
-    env: &mut TypeEnv<Type>,
-) -> Result<Type, TypeCheckError> {
-    tc_array_with_env(exps, env).and_then(|typs| {
-        if typs == *expected_typs {
-            Ok(Type::Tuple(typs.clone()))
-        } else {
-            Err(TypeCheckError::from(
-                "Make-tuple values do not match provided type ascription.",
-            ))
-        }
-    })
+fn tc_tuple_with_env(exps: &Vector<Expr>, env: &mut TypeEnv<Type>) -> Result<Type, TypeCheckError> {
+    tc_array_with_env(exps, env).and_then(|typs| Ok(Type::Tuple(typs)))
 }
 
 fn tc_tuple_get_with_env(
@@ -497,7 +485,7 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
         ExprKind::Cdr(exp) => tc_cdr_with_env(&exp, env),
         ExprKind::IsNull(exp) => tc_is_null_with_env(&exp, env),
         ExprKind::Null(typ) => Ok(Type::List(Box::from(typ.clone()))),
-        ExprKind::Tuple(exps, typs) => tc_tuple_with_env(&exps, &typs, env),
+        ExprKind::Tuple(exps) => tc_tuple_with_env(&exps, env),
         ExprKind::TupleGet(tup, key) => tc_tuple_get_with_env(&tup, &key, env),
         ExprKind::Pack(val, sub, exist) => tc_pack_with_env(&val, &sub, &exist, env),
         ExprKind::FnApp(func, args) => tc_apply_with_env(&func, &args, env),
