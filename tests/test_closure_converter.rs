@@ -59,7 +59,7 @@ fn test_closure_convert_lambda_yes_free_vars() {
         &lexpr::from_str(
             r#"
         (let ((y 3))
-            (make-tuple (lambda ((env0 : (record (y int))) (x : int)) : int
+            (make-tuple (lambda ((env0 : (record (y : int))) (x : int)) : int
                             (+ x (record-ref env0 y)))
                         (make-record (y y))))"#,
         )

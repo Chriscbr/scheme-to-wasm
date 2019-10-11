@@ -132,7 +132,7 @@ fn parse_record_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseErro
         .iter()
         .map(|exp| match exp.to_vec() {
             Some(binding) => {
-                if binding.len() != 2 {
+                if binding.len() != 3 {
                     return Err(ParseError::from(
                         "Record type binding has incorrect number of values.",
                     ));
@@ -141,7 +141,23 @@ fn parse_record_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseErro
                     Some(val) => String::from(val),
                     None => return Err(ParseError::from("Record type label is not a valid name.")),
                 };
-                let typ = match parse_type(&binding[1]) {
+
+                // check there is a separator
+                let separator = match binding[1].as_symbol() {
+                    Some(val) => val,
+                    None => {
+                        return Err(ParseError::from(
+                            "Record type annotation does not contain the correct : separator.",
+                        ))
+                    }
+                };
+                if separator != ":" {
+                    return Err(ParseError::from(
+                        "Record type annotation does not contain the correct : separator.",
+                    ));
+                }
+
+                let typ = match parse_type(&binding[2]) {
                     Ok(val) => val,
                     Err(e) => return Err(e),
                 };

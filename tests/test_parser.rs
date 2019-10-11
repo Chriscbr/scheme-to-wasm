@@ -67,13 +67,13 @@ fn test_parse_type_records() {
     let exp = lexpr::from_str("(record)").unwrap();
     assert_eq!(parse_type(&exp).unwrap(), Type::Record(vector![]));
 
-    let exp = lexpr::from_str("(record (x int))").unwrap();
+    let exp = lexpr::from_str("(record (x : int))").unwrap();
     assert_eq!(
         parse_type(&exp).unwrap(),
         Type::Record(vector![(String::from("x"), Type::Int)])
     );
 
-    let exp = lexpr::from_str("(record (init string) (update (-> string string)))").unwrap();
+    let exp = lexpr::from_str("(record (init : string) (update : (-> string string)))").unwrap();
     assert_eq!(
         parse_type(&exp).unwrap(),
         Type::Record(vector![

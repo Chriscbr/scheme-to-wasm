@@ -29,7 +29,7 @@ impl std::fmt::Display for Type {
             Type::Record(bindings) => {
                 let bindings_str_vec = bindings
                     .iter()
-                    .map(|pair| format!("({} {}) ", pair.0, pair.1))
+                    .map(|pair| format!("({} : {}) ", pair.0, pair.1))
                     .collect();
                 write!(f, "(record {})", format_vector(bindings_str_vec))
             }
