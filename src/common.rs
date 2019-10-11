@@ -15,6 +15,23 @@ pub enum Type {
     Unknown,                        // placeholder
 }
 
+pub fn type_contains_var(typ: &Type, var: u64) -> bool {
+    match typ {
+        Type::Int => false,
+        Type::Bool => false,
+        Type::Str => false,
+        Type::List(x) => type_contains_var(x, var),
+        Type::Func(typs, ret_typ) => {
+            typs.iter().any(|typ| type_contains_var(typ, var)) || type_contains_var(ret_typ, var)
+        }
+        Type::Tuple(typs) => typs.iter().any(|typ| type_contains_var(typ, var)),
+        Type::Record(fields) => fields.iter().any(|field| type_contains_var(&field.1, var)),
+        Type::Exists(bound_var, typ) => *bound_var != var && type_contains_var(typ, var),
+        Type::TypeVar(x) => *x == var,
+        Type::Unknown => false,
+    }
+}
+
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -68,12 +85,13 @@ pub enum ExprKind {
     Cdr(Box<Expr>),
     IsNull(Box<Expr>),
     Null(Type),
-    FnApp(Box<Expr>, Vector<Expr>), // func, arguments
-    Tuple(Vector<Expr>),            // list of expressions, type annotation
-    TupleGet(Box<Expr>, Box<Expr>), // env, index - index must explicitly be a number
-    Pack(Box<Expr>, Type, Type),    // exp, type substitution, existential type
-    Record(Vector<(String, Expr)>), // map from values to labels
-    RecordGet(Box<Expr>, String),   // record, label
+    FnApp(Box<Expr>, Vector<Expr>),             // func, arguments
+    Tuple(Vector<Expr>),                        // list of expressions, type annotation
+    TupleGet(Box<Expr>, Box<Expr>),             // env, index - index must explicitly be a number
+    Pack(Box<Expr>, Type, Type),                // exp, type substitution, existential type
+    Unpack(String, Box<Expr>, Type, Box<Expr>), // new var, package, type substitution, body
+    Record(Vector<(String, Expr)>),             // map from values to labels
+    RecordGet(Box<Expr>, String),               // record, label
     Id(String),
     Num(i64),
     Bool(bool),
@@ -123,7 +141,11 @@ impl std::fmt::Display for Expr {
             ExprKind::Null(typ) => write!(f, "(null {})", typ),
             ExprKind::Tuple(exps) => write!(f, "(make-tuple {})", format_vector(exps.clone())),
             ExprKind::TupleGet(tup, key) => write!(f, "(tuple-ref {} {})", tup, key),
-            ExprKind::Pack(val, sub, exist) => write!(f, "(pack {} {} {})", val, sub, exist), // TODO: change syntax?
+            // TODO: change to (pack typ_sub val : exist)
+            ExprKind::Pack(val, sub, exist) => write!(f, "(pack {} {} {})", val, sub, exist),
+            ExprKind::Unpack(var, package, typ_sub, body) => {
+                write!(f, "(unpack ({} {} {}) {})", var, package, typ_sub, body)
+            }
             ExprKind::Id(val) => write!(f, "{}", val),
             ExprKind::Num(val) => write!(f, "{}", val),
             ExprKind::Bool(val) => write!(f, "{}", if *val { "true" } else { "false" }),

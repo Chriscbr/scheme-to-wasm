@@ -257,7 +257,27 @@ fn substitute(
                 )))
             })
         }
-        ExprKind::Pack(val, sub, exist) => unimplemented!(), // TODO
+        ExprKind::Pack(val, sub, exist) => {
+            substitute(&val, match_exp, replace_with).and_then(|sval| {
+                Ok(Expr::new(ExprKind::Pack(
+                    Box::from(sval),
+                    sub.clone(),
+                    exist.clone(),
+                )))
+            })
+        }
+        ExprKind::Unpack(var, package, typ_sub, body) => {
+            substitute(&package, match_exp, replace_with).and_then(|spackage| {
+                substitute(&body, match_exp, replace_with).and_then(|sbody| {
+                    Ok(Expr::new(ExprKind::Unpack(
+                        var.clone(),
+                        Box::from(spackage),
+                        typ_sub.clone(),
+                        Box::from(sbody),
+                    )))
+                })
+            })
+        }
         ExprKind::IsNull(val) => substitute(&val, match_exp, replace_with)
             .and_then(|sval| Ok(Expr::new(ExprKind::IsNull(Box::from(sval))))),
         ExprKind::Null(_) => Ok(exp.clone()),
@@ -321,7 +341,15 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         ExprKind::Cdr(val) => get_free_vars(val.as_ref()),
         ExprKind::Tuple(vals) => get_free_vars_array(&vals),
         ExprKind::TupleGet(tuple, _key) => get_free_vars(&tuple),
-        ExprKind::Pack(val, sub, exist) => unimplemented!(), // TODO
+        ExprKind::Pack(val, _sub, _exist) => get_free_vars(&val),
+        ExprKind::Unpack(var, _package, _typ_sub, body) => {
+            let mut body_vars = match get_free_vars(&body) {
+                Ok(val) => val,
+                Err(e) => return Err(e),
+            };
+            body_vars.retain(|body_var| body_var != var);
+            Ok(body_vars)
+        }
         ExprKind::IsNull(val) => get_free_vars(val.as_ref()),
         ExprKind::Null(_) => Ok(vector![]),
         ExprKind::Id(x) => Ok(vector![x.clone()]),
@@ -440,7 +468,23 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                 key.clone(),
             )))
         }),
-        ExprKind::Pack(val, sub, exist) => unimplemented!(), // TODO
+        ExprKind::Pack(val, sub, exist) => cc(&val, env).and_then(|cval| {
+            Ok(Expr::new(ExprKind::Pack(
+                Box::from(cval),
+                sub.clone(),
+                exist.clone(),
+            )))
+        }),
+        ExprKind::Unpack(var, package, typ_sub, body) => cc(&package, env).and_then(|cpackage| {
+            cc(&body, env).and_then(|cbody| {
+                Ok(Expr::new(ExprKind::Unpack(
+                    var.clone(),
+                    Box::from(cpackage),
+                    typ_sub.clone(),
+                    Box::from(cbody),
+                )))
+            })
+        }),
         ExprKind::FnApp(func, args) => {
             let cargs: Vector<Expr> = match args.iter().map(|arg| cc(&arg, env)).collect() {
                 Ok(val) => val,

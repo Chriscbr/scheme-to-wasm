@@ -25,9 +25,13 @@ impl std::error::Error for ParseError {
     }
 }
 
-//
-// Helper functions
-//
+fn check_separator(value: &lexpr::Value, expected: char) -> bool {
+    let separator = match value.as_symbol() {
+        Some(val) => val,
+        None => return false,
+    };
+    separator.len() == 1 && separator.chars().nth(0).unwrap() == expected
+}
 
 pub fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
     match annotation {
@@ -142,16 +146,7 @@ fn parse_record_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseErro
                     None => return Err(ParseError::from("Record type label is not a valid name.")),
                 };
 
-                // check there is a separator
-                let separator = match binding[1].as_symbol() {
-                    Some(val) => val,
-                    None => {
-                        return Err(ParseError::from(
-                            "Record type annotation does not contain the correct : separator.",
-                        ))
-                    }
-                };
-                if separator != ":" {
+                if !check_separator(&binding[1], ':') {
                     return Err(ParseError::from(
                         "Record type annotation does not contain the correct : separator.",
                     ));
@@ -224,16 +219,7 @@ fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, Par
                 ));
             }
 
-            // check there is a separator
-            let separator = match arg_vec[1].as_symbol() {
-                Some(val) => val,
-                None => {
-                    return Err(ParseError::from(
-                        "Lambda argument does not contain the correct : separator.",
-                    ))
-                }
-            };
-            if separator != ":" {
+            if !check_separator(&arg_vec[1], ':') {
                 return Err(ParseError::from(
                     "Lambda argument does not contain the correct : separator.",
                 ));
@@ -367,12 +353,7 @@ fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         Err(e) => return Err(e),
     };
 
-    // check there is a separator
-    let separator = match rest[1].as_symbol() {
-        Some(val) => val,
-        None => return Err(ParseError::from("Lambda expression does not have a separator between the arguments list and return type.")),
-    };
-    if separator != ":" {
+    if !check_separator(&rest[1], ':') {
         return Err(ParseError::from("Lambda expression does not have the correct separator : between the arguments list and return type."));
     }
 
@@ -556,7 +537,7 @@ fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         })
     } else {
         Err(ParseError::from(
-            "tuple-ref expression has incorrect number of arguments.",
+            "Tuple-ref expression has incorrect number of arguments.",
         ))
     }
 }
@@ -572,7 +553,57 @@ fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         })
     } else {
         Err(ParseError::from(
-            "pack expression has incorrect number of arguments.",
+            "Pack expression has incorrect number of arguments.",
+        ))
+    }
+}
+
+fn parse_unpack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
+    if rest.len() == 2 {
+        let inner_lst: Vec<lexpr::Value> = match rest[0].to_vec() {
+            Some(val) => val,
+            None => {
+                return Err(ParseError::from(
+                    "First argument in unpack expression is malformed.",
+                ))
+            }
+        };
+
+        if inner_lst.len() != 3 {
+            return Err(ParseError::from(
+                "First argument in unpack expression has incorrect number of values.",
+            ));
+        }
+
+        let var_name: String = match inner_lst[0].as_symbol() {
+            Some(val) => String::from(val),
+            None => return Err(ParseError::from("Unpack expression does not contain an identifier to bind the packed expression to."))
+        };
+
+        let package: Expr = match parse(&inner_lst[1]) {
+            Ok(val) => val,
+            Err(e) => return Err(e),
+        };
+
+        let typ_sub: Type = match parse_type(&inner_lst[2]) {
+            Ok(val) => val,
+            Err(e) => return Err(e),
+        };
+
+        let body: Expr = match parse(&rest[1]) {
+            Ok(val) => val,
+            Err(e) => return Err(e),
+        };
+
+        Ok(Expr::new(ExprKind::Unpack(
+            var_name,
+            Box::from(package),
+            typ_sub,
+            Box::from(body),
+        )))
+    } else {
+        Err(ParseError::from(
+            "Unpack expression has incorrect number of arguments.",
         ))
     }
 }
@@ -619,6 +650,7 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                     "make-tuple" => parse_make_tuple(&rest),
                     "tuple-ref" => parse_get_tuple(&rest),
                     "pack" => parse_pack(&rest),
+                    "unpack" => parse_unpack(&rest),
                     _ => parse_func(&first, &rest),
                 },
                 None => parse_func(&first, &rest),

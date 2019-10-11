@@ -257,6 +257,10 @@ fn test_typecheck_records_happy() {
     let exp = lexpr::from_str(r#"(record-ref (make-record (num 3) (name "hello")) name)"#).unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).unwrap(), Type::Str);
+
+    let exp = lexpr::from_str(r#"(let ((a (make-record (b 3)))) (record-ref a b))"#).unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), Type::Int);
 }
 
 #[test]
@@ -550,7 +554,23 @@ fn test_type_check_pack_happy() {
     let typ = parse_type(&lexpr::from_str("(exists T0 (-> T0 int))").unwrap()).unwrap();
     assert_eq!(type_check(&exp).unwrap(), typ);
 
-    // example using multiple existentials
+    // packing a record expression
+    let exp = parse(
+        &lexpr::from_str(
+            r#"(pack (make-record (a 0)
+                            (f (lambda ((x : int)) : int (+ 1 x))))
+               int
+               (exists T0 (record (a : T0) (f : (-> T0 int)))))"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let typ =
+        parse_type(&lexpr::from_str("(exists T0 (record (a : T0) (f : (-> T0 int))))").unwrap())
+            .unwrap();
+    assert_eq!(type_check(&exp).unwrap(), typ);
+
+    // TODO: example using multiple existentials
 }
 
 #[test]
@@ -564,6 +584,88 @@ fn test_type_check_pack_sad() {
     let exp = parse(
         &lexpr::from_str("(pack (lambda ((x : int)) : bool 3) int (exists T0 (-> T0 T0)))")
             .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+}
+
+#[test]
+fn test_type_check_unpack_happy() {
+    let exp = parse(
+        &lexpr::from_str(
+            r#"
+            (let ((p (pack (make-record (a 0)
+                                (f (lambda ((x : int)) : int
+                                     (+ 1 x))))
+                   int
+                   (exists T0 (record (a : T0)
+                                      (f : (-> T0 int)))))))
+      (unpack (q p T0)
+              ((record-ref q f) (record-ref q a))))
+                    "#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let typ = parse_type(&lexpr::from_str("int").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), typ);
+
+    let exp = parse(
+        &lexpr::from_str(
+            r#"(let ((p (pack (make-record (a 0)
+                            (f (lambda ((x : int)) : int
+                                 (+ 1 x))))
+               int
+               (exists T0 (record (a : T0)
+                                  (f : (-> T0 int)))))))
+  (unpack (q p T2)
+          ((lambda ((y : T2)) : int ((record-ref q f) y))
+           (record-ref q a))))"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let typ = parse_type(&lexpr::from_str("int").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), typ);
+}
+
+#[test]
+fn test_type_check_unpack_sad() {
+    // q.a is not guaranteed to be a number in the existential type,
+    // so we cannot use it (and add to it) concretely as such
+    let exp = parse(
+        &lexpr::from_str(
+            r#"
+            (let ((p (pack (make-record (a 0)
+                                (f (lambda ((x : int)) : int
+                                     (+ 1 x))))
+                   int
+                   (exists T0 (record (a : T0)
+                                      (f : (-> T0 int)))))))
+      (unpack (q p T0)
+              (+ (record-ref q a) 1)))
+                    "#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(type_check(&exp).is_err(), true);
+
+    // the result type cannot have the type variable free
+    let exp = parse(
+        &lexpr::from_str(
+            r#"
+            (let ((p (pack (make-record (a 0)
+                                (f (lambda ((x : int)) : int
+                                     (+ 1 x))))
+                   int
+                   (exists T0 (record (a : T0)
+                                      (f : (-> T0 int)))))))
+      (unpack (q p T0)
+              (record-ref q a)))
+                    "#,
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(type_check(&exp).is_err(), true);

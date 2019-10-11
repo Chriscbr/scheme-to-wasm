@@ -1,4 +1,4 @@
-use crate::common::{BinOp, Expr, ExprKind, Type, TypeEnv};
+use crate::common::{type_contains_var, BinOp, Expr, ExprKind, Type, TypeEnv};
 use im_rc::Vector;
 
 #[derive(Clone, Debug)]
@@ -439,7 +439,7 @@ fn tc_pack_with_env(
         };
         // now check if the type of "substituted" matches the type of the packed expression
         tc_with_env(packed_exp, env).and_then(|packed_type| {
-            if dbg!(packed_type) == dbg!(substituted_type) {
+            if packed_type == substituted_type {
                 Ok(exist.clone())
             } else {
                 Err(TypeCheckError::from(
@@ -451,6 +451,68 @@ fn tc_pack_with_env(
         Err(TypeCheckError::from(
             "Second argument in pack is not an existential type.",
         ))
+    }
+}
+
+fn tc_unpack_with_env(
+    var: &str,
+    package: &Expr,
+    typ_var: &Type,
+    body: &Expr,
+    env: &mut TypeEnv<Type>,
+) -> Result<Type, TypeCheckError> {
+    // Validate that unpack has a valid type var
+    let typ_var_value = match typ_var {
+        Type::TypeVar(x) => *x,
+        _ => {
+            return Err(TypeCheckError::from(
+                "Unpack expression does not contain valid unpack expression.",
+            ))
+        }
+    };
+
+    // Calculate the existential type of the package
+    let package_typ = match tc_with_env(package, env) {
+        Ok(val) => val,
+        Err(e) => return Err(e),
+    };
+    // Get the type variable of the existential type
+    let package_typ_var = match &package_typ {
+        Type::Exists(inner_typ_var, _base_typ) => *inner_typ_var,
+        _ => {
+            return Err(TypeCheckError::from(
+                "Package in unpack expression is not existentially typed.",
+            ))
+        }
+    };
+    // Get the base type of the existential type
+    let package_base_typ: Type = match package_typ {
+        Type::Exists(_inner_typ_var, base_typ) => *base_typ,
+        _ => {
+            return Err(TypeCheckError::from(
+                "Package in unpack expression is not existentially typed.",
+            ))
+        }
+    };
+    // Substitute in the unpack type var for the type var in the base type
+    let spackage_base_typ = match type_substitute(&package_base_typ, package_typ_var, typ_var) {
+        Ok(val) => val,
+        Err(e) => return Err(e),
+    };
+    match tc_with_env(
+        dbg!(body),
+        &mut env.add_binding((String::from(var), spackage_base_typ.clone())),
+    ) {
+        Ok(val) => {
+            if type_contains_var(&val, typ_var_value) {
+                Err(TypeCheckError::from(
+                    "Scoping error: free type variable in type of body expression.",
+                ))
+            } else {
+                Ok(val)
+            }
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -488,6 +550,9 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
         ExprKind::Tuple(exps) => tc_tuple_with_env(&exps, env),
         ExprKind::TupleGet(tup, key) => tc_tuple_get_with_env(&tup, &key, env),
         ExprKind::Pack(val, sub, exist) => tc_pack_with_env(&val, &sub, &exist, env),
+        ExprKind::Unpack(var, package, typ_sub, body) => {
+            tc_unpack_with_env(&var, &package, &typ_sub, &body, env)
+        }
         ExprKind::FnApp(func, args) => tc_apply_with_env(&func, &args, env),
     }
 }
