@@ -58,34 +58,33 @@ fn cc_lambda(
     body: &Expr,
     env: &TypeEnv<Type>,
 ) -> Result<Expr, ClosureConvertError> {
-    let cbody = match cc(body, &env.add_bindings(params.clone())) {
+    // Closure convert the body, with knowledge of the types of the lambda's parameters
+    let mut new_body = match cc(body, &env.add_bindings(params.clone())) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
 
-    let free_vars = match get_free_vars_lambda(&params, &cbody) {
+    // Calculate the set of free variables in the lambda
+    // which is the free variables in the body, minus the variables bound by the parameters
+    let free_vars = match get_free_vars_lambda(&params, &new_body) {
         Ok(val) => val,
         Err(e) => return Err(e),
     };
 
-    // Construct environment name
+    // Construct the environment name
     let env_name: String = generate_env_name();
 
-    // Add environment to beginning of parameter list
-    let mut new_params = params.clone();
-    new_params.push_front((env_name.clone(), Type::Unknown));
-
+    // Construct the environment
     // (x, Id(x)) (y, Id(y)) ...
     let env_contents: Vector<(String, Expr)> = free_vars
         .iter()
         .map(|var| (var.clone(), Expr::new(ExprKind::Id(var.clone()))))
         .collect();
     let new_env = Expr::new(ExprKind::Record(env_contents));
-    let mut new_body: Expr = match cc(body, env) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
-    for var in free_vars {
+
+    // Substitute free variables in the body with references to the environment
+    // ex. if y is free, replace it with (env-ref envX y)
+    for var in &free_vars {
         new_body = match substitute(
             &new_body,
             &var.clone(),
@@ -99,13 +98,32 @@ fn cc_lambda(
         };
     }
 
-    let new_param_types: Vector<Type> = new_params.iter().map(|pair| pair.1.clone()).collect();
+    let free_var_types: Vector<(String, Type)> = free_vars
+        .iter()
+        .cloned()
+        .map(|var| {
+            (
+                var.clone(),
+                env.find(&var)
+                    .or_else(|| Some(&Type::Unknown))
+                    .unwrap()
+                    .clone(),
+            )
+        })
+        .collect();
+
+    // Construct new parameter list
+    // Same as original parameter list, except an environment is appended to the beginning
+    // ex. (lambda ((x : int) (y : int)) <body>)
+    //  -> (lambda ((env : (record <free var types>)) (x : int) (y : int)) <body>)
+    let mut new_params = params.clone();
+    new_params.push_front((env_name.clone(), Type::Record(free_var_types.clone())));
+
     let new_lambda = Expr::new(ExprKind::Lambda(
         new_params,
         ret_type.clone(),
         Box::from(new_body),
     ));
-    let _new_lambda_type = Type::Func(new_param_types, Box::from(ret_type.clone()));
     Ok(Expr::new(ExprKind::Tuple(vector![new_lambda, new_env])))
 }
 
