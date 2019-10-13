@@ -234,14 +234,8 @@ fn substitute(
             .and_then(|sval| Ok(Expr::new(ExprKind::Cdr(Box::from(sval))))),
         ExprKind::Tuple(vals) => substitute_array(&vals, match_exp, replace_with)
             .and_then(|svals| Ok(Expr::new(ExprKind::Tuple(svals)))),
-        ExprKind::TupleGet(tuple, key) => {
-            substitute(&tuple, match_exp, replace_with).and_then(|stuple| {
-                Ok(Expr::new(ExprKind::TupleGet(
-                    Box::from(stuple),
-                    key.clone(),
-                )))
-            })
-        }
+        ExprKind::TupleGet(tuple, key) => substitute(&tuple, match_exp, replace_with)
+            .and_then(|stuple| Ok(Expr::new(ExprKind::TupleGet(Box::from(stuple), *key)))),
         ExprKind::Pack(val, sub, exist) => {
             substitute(&val, match_exp, replace_with).and_then(|sval| {
                 Ok(Expr::new(ExprKind::Pack(
@@ -426,12 +420,8 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                 exps.iter().map(|subexp| cc(&subexp, env)).collect();
             cexps_wrapped.and_then(|cexps| Ok(Expr::new(ExprKind::Tuple(cexps))))
         }
-        ExprKind::TupleGet(tuple, key) => cc(&tuple, env).and_then(|ctuple| {
-            Ok(Expr::new(ExprKind::TupleGet(
-                Box::from(ctuple),
-                key.clone(),
-            )))
-        }),
+        ExprKind::TupleGet(tuple, key) => cc(&tuple, env)
+            .and_then(|ctuple| Ok(Expr::new(ExprKind::TupleGet(Box::from(ctuple), *key)))),
         ExprKind::Record(bindings) => cc_bindings(&bindings, env)
             .and_then(|cbindings| Ok(Expr::new(ExprKind::Record(cbindings)))),
         ExprKind::RecordGet(record, key) => cc(&record, env).and_then(|crecord| {

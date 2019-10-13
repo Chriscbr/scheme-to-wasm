@@ -428,11 +428,10 @@ fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ));
     }
     let tuple = parse(&rest[0])?;
-    let key = parse(&rest[1])?;
-    Ok(Expr::new(ExprKind::TupleGet(
-        Box::from(tuple),
-        Box::from(key),
-    )))
+    let key = rest[1]
+        .as_u64()
+        .ok_or_else(|| "Second argument in tuple-ref is not an integer.")?;
+    Ok(Expr::new(ExprKind::TupleGet(Box::from(tuple), key)))
 }
 
 fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {

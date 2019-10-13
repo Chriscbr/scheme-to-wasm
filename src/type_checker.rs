@@ -87,17 +87,15 @@ fn tc_binop_with_env(
             ret_typ = Type::Str;
         }
     }
-    tc_with_env(arg1, env).and_then(|arg1_typ| {
-        tc_with_env(arg2, env).and_then(|arg2_typ| {
-            if arg1_expect_typ != arg1_typ || arg2_expect_typ != arg2_typ {
-                Err(TypeCheckError::from(
-                    "Binary operation parameters do not match expected types.",
-                ))
-            } else {
-                Ok(ret_typ)
-            }
-        })
-    })
+    let arg1_typ = tc_with_env(arg1, env)?;
+    let arg2_typ = tc_with_env(arg2, env)?;
+    if arg1_expect_typ != arg1_typ || arg2_expect_typ != arg2_typ {
+        Err(TypeCheckError::from(
+            "Binary operation parameters do not match expected types.",
+        ))
+    } else {
+        Ok(ret_typ)
+    }
 }
 
 fn tc_if_with_env(
@@ -106,23 +104,20 @@ fn tc_if_with_env(
     alternate: &Expr,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    tc_with_env(predicate, env).and_then(|pred| {
-        tc_with_env(consequent, env).and_then(|cons| {
-            tc_with_env(alternate, env).and_then(|alt| {
-                if pred != Type::Bool {
-                    Err(TypeCheckError::from(
-                        "Predicate in if expression does not evaluate to a boolean value.",
-                    ))
-                } else if cons != alt {
-                    Err(TypeCheckError::from(
-                        "Consequent and alternate values in if expression do not match types.",
-                    ))
-                } else {
-                    Ok(cons)
-                }
-            })
-        })
-    })
+    let pred_typ = tc_with_env(predicate, env)?;
+    let cons_typ = tc_with_env(consequent, env)?;
+    let alt_typ = tc_with_env(alternate, env)?;
+    if pred_typ != Type::Bool {
+        Err(TypeCheckError::from(
+            "Predicate in if expression does not evaluate to a boolean value.",
+        ))
+    } else if cons_typ != alt_typ {
+        Err(TypeCheckError::from(
+            "Consequent and alternate values in if expression do not match types.",
+        ))
+    } else {
+        Ok(cons_typ)
+    }
 }
 
 fn tc_let_with_env(
@@ -130,22 +125,12 @@ fn tc_let_with_env(
     body: &Expr,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    let type_bindings: Result<Vector<(String, Type)>, TypeCheckError> = bindings
+    let type_bindings: Vector<(String, Type)> = bindings
         .iter()
-        .map(|pair| match tc_with_env(&pair.1, env) {
-            Ok(typ) => Ok((pair.0.clone(), typ)),
-            Err(e) => Err(e),
-        })
-        .collect();
-
-    match type_bindings {
-        Ok(val) => {
-            // there ought to be an easier way to convert an im::vector into a slice
-            let mut new_env = env.add_bindings(val);
-            tc_with_env(body, &mut new_env)
-        }
-        Err(e) => Err(e),
-    }
+        .map(|pair| Ok((pair.0.clone(), tc_with_env(&pair.1, env)?)))
+        .collect::<Result<Vector<(String, Type)>, TypeCheckError>>()?;
+    let mut new_env = env.add_bindings(type_bindings);
+    tc_with_env(body, &mut new_env)
 }
 
 fn tc_lambda_with_env(
@@ -154,59 +139,46 @@ fn tc_lambda_with_env(
     body: &Expr,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    // add arg types to the type environment for use in the body
+    // Add arg types to the type environment for use in the body
     let mut new_env = env.add_bindings(params.clone());
 
-    // type check lambda body
-    tc_with_env(body, &mut new_env).and_then(|body_typ| {
-        if *ret_typ == body_typ {
-            let param_types: Vector<Type> = params.iter().map(|pair| pair.1.clone()).collect();
-            Ok(Type::Func(param_types, Box::from(ret_typ.clone())))
-        } else {
-            Err(TypeCheckError::from(
-                "Lambda expression body type does not match the expected return type.",
-            ))
-        }
-    })
+    // Type check lambda body
+    let body_typ = tc_with_env(body, &mut new_env)?;
+    if *ret_typ == body_typ {
+        let param_types: Vector<Type> = params.iter().map(|pair| pair.1.clone()).collect();
+        Ok(Type::Func(param_types, Box::from(ret_typ.clone())))
+    } else {
+        Err(TypeCheckError::from(
+            "Lambda expression body type does not match the expected return type.",
+        ))
+    }
 }
 
 fn tc_begin_with_env(exps: &Vector<Expr>, env: &mut TypeEnv<Type>) -> Result<Type, TypeCheckError> {
-    // Note: it's important that even though we only return the type of the
+    // Note: even though we only return the type of the
     // last expression within the 'begin' S-expression, we still want to
     // type-check the entire array in case any type errors pop up
-    match tc_array_with_env(exps, env) {
-        // an alternative for picking out the last element from exps is:
-        // Ok(types) => Ok(types[types.len() - 1].clone()),
-        Ok(mut types) => Ok(types.remove(types.len() - 1)),
-        Err(e) => Err(e),
-    }
+    let exp_typs = tc_array_with_env(exps, env)?;
+    Ok(exp_typs.clone().remove(exp_typs.len() - 1))
 }
 
 // set! returns the value that is being assigned, since the language has no unit type
 fn tc_set_bang_with_env(
-    symbol: &str,
-    exp: &Expr,
+    var: &str,
+    new_val: &Expr,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    let expected_type = match env.find(symbol) {
-        Some(typ) => typ.clone(),
-        None => {
-            return Err(TypeCheckError::from(
-                "Variable assignment cannot occur before it has been defined!",
-            ))
-        }
-    };
-    match tc_with_env(exp, env) {
-        Ok(typ) => {
-            if typ == expected_type {
-                Ok(typ)
-            } else {
-                Err(TypeCheckError::from(
-                    "Type of set! body does not match variable's initialized type.",
-                ))
-            }
-        }
-        Err(e) => Err(e),
+    let expected_typ = env
+        .find(var)
+        .ok_or_else(|| "Variable assignment cannot occur before it has been defined!")?
+        .clone();
+    let new_val_typ = tc_with_env(new_val, env)?;
+    if new_val_typ == expected_typ {
+        Ok(new_val_typ)
+    } else {
+        Err(TypeCheckError::from(
+            "Type of set! body does not match variable's initialized type.",
+        ))
     }
 }
 
@@ -233,27 +205,23 @@ fn tc_cons_with_env(
     }
 }
 
-fn tc_car_with_env(exp: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCheckError> {
-    match tc_with_env(exp, env) {
-        Ok(lst_type) => match lst_type {
-            Type::List(boxed_type) => Ok(*boxed_type),
-            _ => Err(TypeCheckError::from(
-                "Expression in car is not a list type.",
-            )),
-        },
-        Err(e) => Err(e),
+fn tc_car_with_env(pair: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCheckError> {
+    let pair_typ = tc_with_env(pair, env)?;
+    match pair_typ {
+        Type::List(boxed_type) => Ok(*boxed_type),
+        _ => Err(TypeCheckError::from(
+            "Expression in car is not a list type.",
+        )),
     }
 }
 
-fn tc_cdr_with_env(exp: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCheckError> {
-    match tc_with_env(exp, env) {
-        Ok(lst_type) => match lst_type {
-            Type::List(boxed_type) => Ok(Type::List(boxed_type)),
-            _ => Err(TypeCheckError::from(
-                "Expression in cdr is not a list type.",
-            )),
-        },
-        Err(e) => Err(e),
+fn tc_cdr_with_env(pair: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCheckError> {
+    let pair_typ = tc_with_env(pair, env)?;
+    match pair_typ {
+        Type::List(boxed_type) => Ok(Type::List(Box::from(*boxed_type))),
+        _ => Err(TypeCheckError::from(
+            "Expression in car is not a list type.",
+        )),
     }
 }
 
@@ -263,28 +231,23 @@ fn tc_tuple_with_env(exps: &Vector<Expr>, env: &mut TypeEnv<Type>) -> Result<Typ
 
 fn tc_tuple_get_with_env(
     tup: &Expr,
-    key: &Expr,
+    key: u64,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    tc_with_env(tup, env).and_then(|tup_typ| match tup_typ {
-        Type::Tuple(vec) => match key.kind {
-            ExprKind::Num(x) => {
-                if (x as usize) < vec.len() {
-                    Ok(vec[x as usize].clone())
-                } else {
-                    Err(TypeCheckError::from(
-                        "Value in tuple-ref is too large for the provided tuple.",
-                    ))
-                }
+    match tc_with_env(tup, env)? {
+        Type::Tuple(vec) => {
+            if (key as usize) < vec.len() {
+                Ok(vec[key as usize].clone())
+            } else {
+                Err(TypeCheckError::from(
+                    "Value in tuple-ref is too large for the provided tuple.",
+                ))
             }
-            _ => Err(TypeCheckError::from(
-                "Second expression in tuple-ref is not a number.",
-            )),
-        },
+        }
         _ => Err(TypeCheckError::from(
             "First expression in tuple-ref is not a tuple.",
         )),
-    })
+    }
 }
 
 fn tc_record_with_env(
@@ -297,11 +260,8 @@ fn tc_record_with_env(
             Ok(val) => Ok((pair.0.clone(), val)),
             Err(e) => Err(e),
         })
-        .collect();
-    match binding_types {
-        Ok(val) => Ok(Type::Record(val)),
-        Err(e) => Err(e),
-    }
+        .collect::<Result<Vector<(String, Type)>, TypeCheckError>>()?;
+    Ok(Type::Record(binding_types))
 }
 
 fn tc_record_get_with_env(
@@ -309,7 +269,7 @@ fn tc_record_get_with_env(
     key: &str,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    tc_with_env(record, env).and_then(|record_typ| match record_typ {
+    match tc_with_env(record, env)? {
         Type::Record(bindings) => {
             let matches: Vector<(String, Type)> = bindings
                 .iter()
@@ -326,7 +286,7 @@ fn tc_record_get_with_env(
         _ => Err(TypeCheckError::from(
             "First expression in record-ref is not a record.",
         )),
-    })
+    }
 }
 
 fn tc_apply_with_env(
@@ -334,21 +294,15 @@ fn tc_apply_with_env(
     args: &Vector<Expr>,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    match tc_with_env(func, env) {
-        Ok(typ) => {
-            let param_types = tc_array_with_env(&args, env)?;
-            check_lambda_type_with_inputs(&typ, &param_types)
-        }
-        Err(e) => Err(e),
-    }
+    let func_typ = tc_with_env(func, env)?;
+    let param_types = tc_array_with_env(&args, env)?;
+    check_lambda_type_with_inputs(&func_typ, &param_types)
 }
 
 // This always returns Type::Bool, but we still need to type check the inside.
 fn tc_is_null_with_env(exp: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCheckError> {
-    match tc_with_env(exp, env) {
-        Ok(_) => Ok(Type::Bool),
-        Err(e) => Err(e),
-    }
+    tc_with_env(exp, env)?;
+    Ok(Type::Bool)
 }
 
 fn type_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Result<Type, TypeCheckError> {
@@ -388,17 +342,14 @@ fn type_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Result<Typ
         Type::Exists(inner_type_var, inner_typ) => {
             if *inner_type_var == type_var {
                 let new_inner_type_var = type_var + 1;
-                match type_substitute(
-                    dbg!(inner_typ),
-                    dbg!(*inner_type_var),
-                    dbg!(&Type::TypeVar(new_inner_type_var)),
-                ) {
-                    Ok(val) => type_substitute(dbg!(&val), dbg!(type_var), dbg!(replace_with))
-                        .and_then(|sub_inner_typ| {
-                            Ok(Type::Exists(new_inner_type_var, Box::from(sub_inner_typ)))
-                        }),
-                    Err(e) => Err(e),
-                }
+                let inner_typ_clean = type_substitute(
+                    inner_typ,
+                    *inner_type_var,
+                    &Type::TypeVar(new_inner_type_var),
+                )?;
+                type_substitute(&inner_typ_clean, type_var, replace_with).and_then(
+                    |sub_inner_typ| Ok(Type::Exists(new_inner_type_var, Box::from(sub_inner_typ))),
+                )
             } else {
                 type_substitute(inner_typ, type_var, replace_with).and_then(|sub_inner_typ| {
                     Ok(Type::Exists(*inner_type_var, Box::from(sub_inner_typ)))
@@ -424,17 +375,16 @@ fn tc_pack_with_env(
 ) -> Result<Type, TypeCheckError> {
     if let Type::Exists(type_var, base_typ) = exist {
         // substitute "sub" for all occurrences of type_var (the quantified type) in exist
-        let substituted_type = type_substitute(base_typ, *type_var, sub)?;
+        let substituted_typ = type_substitute(base_typ, *type_var, sub)?;
         // now check if the type of "substituted" matches the type of the packed expression
-        tc_with_env(packed_exp, env).and_then(|packed_type| {
-            if packed_type == substituted_type {
-                Ok(exist.clone())
-            } else {
-                Err(TypeCheckError::from(
-                    "Packed expression does not match existential type.",
-                ))
-            }
-        })
+        let packed_typ = tc_with_env(packed_exp, env)?;
+        if packed_typ == substituted_typ {
+            Ok(exist.clone())
+        } else {
+            Err(TypeCheckError::from(
+                "Packed expression does not match existential type.",
+            ))
+        }
     } else {
         Err(TypeCheckError::from(
             "Second argument in pack is not an existential type.",
@@ -461,41 +411,34 @@ fn tc_unpack_with_env(
 
     // Calculate the existential type of the package
     let package_typ = tc_with_env(package, env)?;
-    // Get the type variable of the existential type
-    let package_typ_var = match &package_typ {
-        Type::Exists(inner_typ_var, _base_typ) => *inner_typ_var,
+
+    // Extract fields from the existential type
+    let package_typ_var: u64;
+    let package_base_typ: Type;
+    match &package_typ {
+        Type::Exists(inner_typ_var, base_typ) => {
+            package_typ_var = *inner_typ_var;
+            package_base_typ = (**base_typ).clone();
+        }
         _ => {
             return Err(TypeCheckError::from(
                 "Package in unpack expression is not existentially typed.",
             ))
         }
-    };
-    // Get the base type of the existential type
-    let package_base_typ: Type = match package_typ {
-        Type::Exists(_inner_typ_var, base_typ) => *base_typ,
-        _ => {
-            return Err(TypeCheckError::from(
-                "Package in unpack expression is not existentially typed.",
-            ))
-        }
-    };
+    }
+
     // Substitute in the unpack type var for the type var in the base type
     let spackage_base_typ = type_substitute(&package_base_typ, package_typ_var, typ_var)?;
-    match tc_with_env(
-        dbg!(body),
+    let body_typ = tc_with_env(
+        body,
         &mut env.add_binding((String::from(var), spackage_base_typ.clone())),
-    ) {
-        Ok(val) => {
-            if type_contains_var(&val, typ_var_value) {
-                Err(TypeCheckError::from(
-                    "Scoping error: free type variable in type of body expression.",
-                ))
-            } else {
-                Ok(val)
-            }
-        }
-        Err(e) => Err(e),
+    )?;
+    if type_contains_var(&body_typ, typ_var_value) {
+        return Err(TypeCheckError::from(
+            "Scoping error: free type variable in type of body expression.",
+        ));
     }
+    Ok(body_typ)
 }
 
 fn tc_array_with_env(
@@ -530,7 +473,7 @@ pub fn tc_with_env(value: &Expr, env: &mut TypeEnv<Type>) -> Result<Type, TypeCh
         ExprKind::IsNull(exp) => tc_is_null_with_env(&exp, env),
         ExprKind::Null(typ) => Ok(Type::List(Box::from(typ.clone()))),
         ExprKind::Tuple(exps) => tc_tuple_with_env(&exps, env),
-        ExprKind::TupleGet(tup, key) => tc_tuple_get_with_env(&tup, &key, env),
+        ExprKind::TupleGet(tup, key) => tc_tuple_get_with_env(&tup, *key, env),
         ExprKind::Pack(val, sub, exist) => tc_pack_with_env(&val, &sub, &exist, env),
         ExprKind::Unpack(var, package, typ_sub, body) => {
             tc_unpack_with_env(&var, &package, &typ_sub, &body, env)
