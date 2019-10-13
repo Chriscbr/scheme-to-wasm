@@ -4,11 +4,17 @@ use crate::util::concat_vectors;
 use im_rc::{vector, Vector};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+// "global variable" usage derived from https://stackoverflow.com/a/27826181
 pub static GENSYM_COUNT: AtomicU64 = AtomicU64::new(0);
 
-// "global variable" usage derived from https://stackoverflow.com/a/27826181
 fn generate_env_name() -> String {
     let name = format!("env{}", GENSYM_COUNT.load(Ordering::SeqCst));
+    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
+    name
+}
+
+fn generate_var_name() -> String {
+    let name = format!("temp{}", GENSYM_COUNT.load(Ordering::SeqCst));
     GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
     name
 }
@@ -194,17 +200,14 @@ fn substitute(
             })
         }
         ExprKind::Record(bindings) => {
-            match bindings
+            let cbindings = bindings
                 .iter()
                 .map(|pair| {
                     substitute(&pair.1, match_exp, replace_with)
                         .and_then(|sexp| Ok((pair.0.clone(), sexp)))
                 })
-                .collect()
-            {
-                Ok(val) => Ok(Expr::new(ExprKind::Record(val))),
-                Err(e) => Err(e),
-            }
+                .collect::<Result<Vector<(String, Expr)>, ClosureConvertError>>()?;
+            Ok(Expr::new(ExprKind::Record(cbindings)))
         }
         ExprKind::RecordGet(record, key) => {
             substitute(&record, match_exp, replace_with).and_then(|srecord| {
@@ -448,11 +451,21 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
             })
         }),
         ExprKind::FnApp(func, args) => {
-            let cargs: Vector<Expr> = args
+            let cfunc = cc(&func, env)?; // this could be a tuple or an identifier
+            let mut cargs: Vector<Expr> = args
                 .iter()
                 .map(|arg| cc(&arg, env))
                 .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
-            cc(&func, env).and_then(|cfunc| Ok(Expr::new(ExprKind::FnApp(Box::from(cfunc), cargs))))
+            let temp_var = generate_var_name();
+            let temp_id = Expr::new(ExprKind::Id(temp_var.clone()));
+            let get_func = Expr::new(ExprKind::TupleGet(Box::from(temp_id.clone()), 0));
+            let get_env = Expr::new(ExprKind::TupleGet(Box::from(temp_id.clone()), 1));
+            cargs.push_front(get_env);
+            let new_body = Expr::new(ExprKind::FnApp(Box::from(get_func), cargs));
+            Ok(Expr::new(ExprKind::Let(
+                vector![(temp_var, cfunc)],
+                Box::from(new_body),
+            )))
         }
     }
 }

@@ -44,11 +44,15 @@ impl std::fmt::Display for Type {
             }
             Type::Tuple(typs) => write!(f, "(tuple {})", format_vector(typs.clone())),
             Type::Record(bindings) => {
-                let bindings_str_vec = bindings
-                    .iter()
-                    .map(|pair| format!("({} : {}) ", pair.0, pair.1))
-                    .collect();
-                write!(f, "(record {})", format_vector(bindings_str_vec))
+                if bindings.is_empty() {
+                    write!(f, "(record)")
+                } else {
+                    let bindings_str_vec = bindings
+                        .iter()
+                        .map(|pair| format!("({} : {})", pair.0, pair.1))
+                        .collect();
+                    write!(f, "(record {})", format_vector(bindings_str_vec))
+                }
             }
             Type::Exists(typ_var, base) => write!(f, "(exists T{} {})", typ_var, base),
             Type::TypeVar(id) => write!(f, "T{}", id),
@@ -106,14 +110,14 @@ impl std::fmt::Display for Expr {
             ExprKind::Let(bindings, body) => {
                 let bindings_str_vec = bindings
                     .iter()
-                    .map(|pair| format!("({} {}) ", pair.0, pair.1))
+                    .map(|pair| format!("({} {})", pair.0, pair.1))
                     .collect();
                 write!(f, "(let ({}) {})", format_vector(bindings_str_vec), body)
             }
             ExprKind::Lambda(params, ret_type, body) => {
                 let params_str_vec = params
                     .iter()
-                    .map(|pair| format!("({} {}) ", pair.0, pair.1))
+                    .map(|pair| format!("({} : {})", pair.0, pair.1))
                     .collect();
                 write!(
                     f,
@@ -125,11 +129,15 @@ impl std::fmt::Display for Expr {
             }
             ExprKind::FnApp(func, args) => write!(f, "({} {})", func, format_vector(args.clone())),
             ExprKind::Record(bindings) => {
-                let bindings_str_vec = bindings
-                    .iter()
-                    .map(|pair| format!("({} {}) ", pair.0, pair.1))
-                    .collect();
-                write!(f, "(make-record {})", format_vector(bindings_str_vec))
+                if bindings.is_empty() {
+                    write!(f, "(make-record)")
+                } else {
+                    let bindings_str_vec = bindings
+                        .iter()
+                        .map(|pair| format!("({} {})", pair.0, pair.1))
+                        .collect();
+                    write!(f, "(make-record {})", format_vector(bindings_str_vec))
+                }
             }
             ExprKind::RecordGet(record, key) => write!(f, "(record-ref {} {})", record, key),
             ExprKind::Begin(exps) => write!(f, "(begin {})", format_vector(exps.clone())),

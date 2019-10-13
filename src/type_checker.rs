@@ -256,10 +256,7 @@ fn tc_record_with_env(
 ) -> Result<Type, TypeCheckError> {
     let binding_types = bindings
         .iter()
-        .map(|pair| match tc_with_env(&pair.1, env) {
-            Ok(val) => Ok((pair.0.clone(), val)),
-            Err(e) => Err(e),
-        })
+        .map(|pair| Ok((pair.0.clone(), tc_with_env(&pair.1, env)?)))
         .collect::<Result<Vector<(String, Type)>, TypeCheckError>>()?;
     Ok(Type::Record(binding_types))
 }

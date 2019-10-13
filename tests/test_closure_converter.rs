@@ -23,31 +23,34 @@ fn test_closure_convert_lambda_no_free_vars() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(closure_convert(&exp).unwrap(), expected_exp);
+    let cc_exp = closure_convert(&exp).unwrap();
+    println!("Source: {}", exp);
+    println!("Closure converted: {}", cc_exp);
+    assert_eq!(cc_exp, expected_exp);
 }
 
-// #[test]
-// fn test_closure_convert_apply_lambda_no_free_vars() {
-//     let _shared = THE_RESOURCE.lock().unwrap();
-//     dangerously_reset_gensym_count();
-//     let exp = parse(&lexpr::from_str("((lambda ((x : int)) : int (+ x 3)) 5)").unwrap()).unwrap();
-//     let expected_exp = parse(
-//         &lexpr::from_str(
-//             r#"(let ((temp0
-//        (make-tuple
-//         ((lambda ((env0 : unknown) (x : int)) : int
-//            (+ x 3))
-//          (make-env))
-//         :
-//         ((-> unknown int int)
-//          unknown))))
-//   ((get-nth temp0 0) (get-nth temp0 1) 5))"#,
-//         )
-//         .unwrap(),
-//     )
-//     .unwrap();
-//     assert_eq!(closure_convert(&exp).unwrap(), expected_exp);
-// }
+#[test]
+fn test_closure_convert_apply_lambda_no_free_vars() {
+    let _shared = THE_RESOURCE.lock().unwrap();
+    dangerously_reset_gensym_count();
+    let exp = parse(&lexpr::from_str("((lambda ((x : int)) : int (+ x 3)) 5)").unwrap()).unwrap();
+    let expected_exp = parse(
+        &lexpr::from_str(
+            r#"(let ((temp1
+       (make-tuple
+        (lambda ((env0 : (record)) (x : int)) : int
+           (+ x 3))
+         (make-record))))
+  ((tuple-ref temp1 0) (tuple-ref temp1 1) 5))"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let cc_exp = closure_convert(&exp).unwrap();
+    println!("Source: {}", exp);
+    println!("Closure converted: {}", cc_exp);
+    assert_eq!(cc_exp, expected_exp);
+}
 
 #[test]
 fn test_closure_convert_lambda_yes_free_vars() {
@@ -66,5 +69,33 @@ fn test_closure_convert_lambda_yes_free_vars() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(closure_convert(&exp).unwrap(), expected_exp);
+    let cc_exp = closure_convert(&exp).unwrap();
+    println!("Source: {}", exp);
+    println!("Closure converted: {}", cc_exp);
+    assert_eq!(cc_exp, expected_exp);
+}
+
+#[test]
+fn test_closure_convert_apply_lambda_yes_free_vars() {
+    let _shared = THE_RESOURCE.lock().unwrap();
+    dangerously_reset_gensym_count();
+    let exp =
+        parse(&lexpr::from_str("(let ((y 4)) ((lambda ((x : int)) : int (+ x y)) 3))").unwrap())
+            .unwrap();
+    let expected_exp = parse(
+        &lexpr::from_str(
+            r#"(let ((y 4))
+            (let ((temp1 (make-tuple
+                    (lambda ((env0 : (record (y : int))) (x : int)) : int
+                        (+ x (record-ref env0 y)))
+                    (make-record (y y)))))
+                ((tuple-ref temp1 0) (tuple-ref temp1 1) 3)))"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let cc_exp = closure_convert(&exp).unwrap();
+    println!("Source: {}", exp);
+    println!("Closure converted: {}", cc_exp);
+    assert_eq!(cc_exp, expected_exp);
 }
