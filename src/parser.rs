@@ -1,5 +1,6 @@
 use crate::common::{BinOp, Expr, ExprKind, Type};
 use im_rc::Vector;
+use std::num::ParseIntError;
 
 #[derive(Clone, Debug)]
 pub struct ParseError(String);
@@ -25,12 +26,20 @@ impl std::error::Error for ParseError {
     }
 }
 
+// Implement the conversion from `ParseIntError` to `ParseError`.
+// This will be automatically called by `?` if a `ParseIntError`
+// needs to be converted into a `ParseError`.
+impl From<ParseIntError> for ParseError {
+    fn from(err: ParseIntError) -> ParseError {
+        ParseError(format!("ParseIntError: {}", err))
+    }
+}
+
 fn check_separator(value: &lexpr::Value, expected: char) -> bool {
-    let separator = match value.as_symbol() {
-        Some(val) => val,
-        None => return false,
-    };
-    separator.len() == 1 && separator.chars().nth(0).unwrap() == expected
+    match value.as_symbol() {
+        Some(sep) => sep.len() == 1 && sep.chars().nth(0).unwrap() == expected,
+        None => false,
+    }
 }
 
 pub fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
@@ -40,27 +49,22 @@ pub fn parse_type(annotation: &lexpr::Value) -> Result<Type, ParseError> {
             "bool" => Ok(Type::Bool),
             "string" => Ok(Type::Str),
             "unknown" => Ok(Type::Unknown),
-            val => {
-                let mut iter = val.chars();
-                let first = iter.next();
-                if first == Some('T') {
-                    let rest_str: String = iter.collect();
-                    match rest_str.parse::<u64>() {
-                        Ok(num) => Ok(Type::TypeVar(num)),
-                        Err(e) => Err(ParseError(format!("ParseError: {}", e))),
-                    }
-                } else {
-                    Err(ParseError::from(
-                        "Type annotation not recognized as a valid type.",
-                    ))
-                }
-            }
+            val => match val.chars().next() {
+                Some('T') => Ok(Type::TypeVar(
+                    val[1..val.len()]
+                        .chars()
+                        .collect::<String>()
+                        .parse::<u64>()?,
+                )),
+                _ => Err(ParseError::from(
+                    "Type annotation not recognized as a valid type.",
+                )),
+            },
         },
         lexpr::Value::Cons(_) => {
-            let lst_vec = match annotation.to_vec() {
-                Some(vec) => vec,
-                None => return Err(ParseError::from("Type annotation is not a valid list.")),
-            };
+            let lst_vec = annotation
+                .to_vec()
+                .ok_or_else(|| "Type annotation is not a valid list.")?;
             // ensure that the function annotation has at least -> and a return type as elements
             if lst_vec.is_empty() {
                 return Err(ParseError::from("Type annotation is missing values."));
@@ -88,20 +92,13 @@ fn parse_func_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError>
             "Type annotation for function is missing values.",
         ));
     }
-    let input_types: Result<Vec<Type>, ParseError> = lst_vec[1..(lst_vec.len() - 1)]
+    let input_types: Vec<Type> = lst_vec[1..(lst_vec.len() - 1)]
         .iter()
         .map(|val| parse_type(val))
-        .collect();
-    let input_types_unwrapped = match input_types {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
-    let return_type = match parse_type(&lst_vec[lst_vec.len() - 1]) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
+        .collect::<Result<Vec<Type>, ParseError>>()?;
+    let return_type = parse_type(&lst_vec[lst_vec.len() - 1])?;
     Ok(Type::Func(
-        Vector::from(input_types_unwrapped),
+        Vector::from(input_types),
         Box::from(return_type),
     ))
 }
@@ -112,27 +109,20 @@ fn parse_list_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError>
             "Type annotation for list has incorrect number of values.",
         ));
     }
-    let lst_type = match parse_type(&lst_vec[1]) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
+    let lst_type = parse_type(&lst_vec[1])?;
     Ok(Type::List(Box::from(lst_type)))
 }
 
 fn parse_tuple_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
-    let tuple_types: Result<Vec<Type>, ParseError> = lst_vec[1..(lst_vec.len())]
+    let tuple_types: Vec<Type> = lst_vec[1..(lst_vec.len())]
         .iter()
         .map(|val| parse_type(val))
-        .collect();
-    let tuple_types_unwrapped = match tuple_types {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
-    Ok(Type::Tuple(Vector::from(tuple_types_unwrapped)))
+        .collect::<Result<Vec<Type>, ParseError>>()?;
+    Ok(Type::Tuple(Vector::from(tuple_types)))
 }
 
 fn parse_record_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
-    let record_types: Result<Vec<(String, Type)>, ParseError> = lst_vec[1..(lst_vec.len())]
+    let record_types: Vec<(String, Type)> = lst_vec[1..(lst_vec.len())]
         .iter()
         .map(|exp| match exp.to_vec() {
             Some(binding) => {
@@ -141,33 +131,26 @@ fn parse_record_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseErro
                         "Record type binding has incorrect number of values.",
                     ));
                 }
-                let label = match binding[0].as_symbol() {
-                    Some(val) => String::from(val),
-                    None => return Err(ParseError::from("Record type label is not a valid name.")),
-                };
-
+                let label = String::from(
+                    binding[0]
+                        .as_symbol()
+                        .ok_or_else(|| "Record type label is not a valid name.")?,
+                );
                 if !check_separator(&binding[1], ':') {
                     return Err(ParseError::from(
                         "Record type annotation does not contain the correct : separator.",
                     ));
                 }
+                let typ = parse_type(&binding[2])?;
 
-                let typ = match parse_type(&binding[2]) {
-                    Ok(val) => val,
-                    Err(e) => return Err(e),
-                };
                 Ok((label, typ))
             }
             None => Err(ParseError::from(
                 "Record type binding is not a proper list of values.",
             )),
         })
-        .collect();
-    let record_types_unwrapped = match record_types {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
-    Ok(Type::Record(Vector::from(record_types_unwrapped)))
+        .collect::<Result<Vec<(String, Type)>, ParseError>>()?;
+    Ok(Type::Record(Vector::from(record_types)))
 }
 
 fn parse_exists_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
@@ -176,70 +159,17 @@ fn parse_exists_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseErro
             "Type annotation for existential type has incorrect number of values.",
         ));
     }
-    let type_var = match lst_vec[1].as_name() {
-                        Some(val) => {
-                            if !val.starts_with('T') {
-                                return Err(ParseError::from("Type variable for existential type is not of the form T0, T1, etc."));
-                            }
-                            match val[1..].parse::<u64>() {
-                            Ok(num) => num,
-                            Err(e) => return Err(ParseError(format!("ParseError: {}", e))),
-                        }},
-                        None => return Err(ParseError::from(
-                            "Type annotation for existential type does not have a valid type variable in its first argument.",
-                        )),
-                    };
-    let lst_type = match parse_type(&lst_vec[2]) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
-    Ok(Type::Exists(type_var, Box::from(lst_type)))
-}
-
-fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, ParseError> {
-    let arg_list = match args.to_vec() {
-        Some(vec) => vec,
-        None => {
+    let type_var_str = lst_vec[1].as_symbol().ok_or_else(|| "Type annotation for existential type does not have a valid type variable in its first argument.")?;
+    let type_var_num = match type_var_str.chars().next() {
+        Some('T') => type_var_str[1..type_var_str.len()].chars().collect::<String>().parse::<u64>()?,
+        _ => {
             return Err(ParseError::from(
-                "Lambda arguments are not in a valid list.",
+                "Type annotation for existential type does not have a proper type variable starting with T.",
             ))
         }
     };
-    arg_list
-        .iter()
-        .map(|arg| {
-            // [x : int] as a vec
-            let arg_vec = match arg.to_vec() {
-                Some(vec) => vec,
-                None => return Err(ParseError::from("Lambda argument is not a valid list.")),
-            };
-            if arg_vec.len() != 3 {
-                return Err(ParseError::from(
-                    "Lambda argument is missing values or contains extra values.",
-                ));
-            }
-
-            if !check_separator(&arg_vec[1], ':') {
-                return Err(ParseError::from(
-                    "Lambda argument does not contain the correct : separator.",
-                ));
-            }
-
-            let arg_name = match arg_vec[0].as_symbol() {
-                Some(val) => val,
-                None => {
-                    return Err(ParseError::from(
-                        "Lambda argument does not have a valid name.",
-                    ))
-                }
-            };
-            let arg_type = match parse_type(&arg_vec[2]) {
-                Ok(typ) => typ,
-                Err(e) => return Err(e),
-            };
-            Ok((String::from(arg_name), arg_type))
-        })
-        .collect()
+    let lst_type = parse_type(&lst_vec[2])?;
+    Ok(Type::Exists(type_var_num, Box::from(lst_type)))
 }
 
 fn parse_array(exps: &[lexpr::Value]) -> Result<Vector<Expr>, ParseError> {
@@ -252,14 +182,8 @@ fn parse_binop(op: &str, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
             "Binary operator has incorrect number of sub-expressions.",
         ));
     }
-    let exp1 = match parse(&rest[0]) {
-        Ok(val) => Box::from(val),
-        Err(e) => return Err(e),
-    };
-    let exp2 = match parse(&rest[1]) {
-        Ok(val) => Box::from(val),
-        Err(e) => return Err(e),
-    };
+    let exp1 = Box::from(parse(&rest[0])?);
+    let exp2 = Box::from(parse(&rest[1])?);
     let operator = match op {
         "and" => BinOp::And,
         "or" => BinOp::Or,
@@ -279,23 +203,19 @@ fn parse_binop(op: &str, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
 }
 
 fn parse_if(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 3 {
-        parse(&rest[0]).and_then(|predicate| {
-            parse(&rest[1]).and_then(|consequent| {
-                parse(&rest[2]).and_then(|alternate| {
-                    Ok(Expr::new(ExprKind::If(
-                        Box::from(predicate),
-                        Box::from(consequent),
-                        Box::from(alternate),
-                    )))
-                })
-            })
-        })
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 3 {
+        return Err(ParseError::from(
             "If expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let predicate = parse(&rest[0])?;
+    let consequent = parse(&rest[1])?;
+    let alternate = parse(&rest[2])?;
+    Ok(Expr::new(ExprKind::If(
+        Box::from(predicate),
+        Box::from(consequent),
+        Box::from(alternate),
+    )))
 }
 
 fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -304,42 +224,29 @@ fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
             "Let expression has incorrect number of arguments.",
         ));
     }
-    // Assert that the bindings is a proper list
-    let bindings = match rest[0].to_vec() {
-        Some(vec) => vec,
-        None => {
-            return Err(ParseError::from(
-                "Let expression bindings are not in a proper list.",
-            ))
-        }
-    };
-
-    let parsed_bindings: Result<Vector<(String, Expr)>, ParseError> = Vector::from(bindings)
+    let bindings = rest[0]
+        .to_vec()
+        .ok_or_else(|| "Let expression bindings are not in a proper list.")?;
+    let bindings_vec: Vector<(String, Expr)> = bindings
         .iter()
         .map(|binding| {
-            let binding_vec = match binding.to_vec() {
-                Some(vec) => vec,
-                None => return Err(ParseError::from("Let binding is not a valid list.")),
-            };
+            let binding_vec = binding
+                .to_vec()
+                .ok_or_else(|| "Let binding is not a valid list.")?;
             if binding_vec.len() != 2 {
                 return Err(ParseError::from(
                     "Let binding is missing values or contains extra values.",
                 ));
             }
-
-            binding_vec[0]
+            let binding_name = binding_vec[0]
                 .as_symbol()
-                .ok_or_else(|| ParseError::from("Let binding does not have a valid name."))
-                .and_then(|binding_name| {
-                    parse(&binding_vec[1])
-                        .and_then(|binding_val| Ok((String::from(binding_name), binding_val)))
-                })
+                .ok_or_else(|| "Let binding does not have a valid name.")?;
+            let binding_val = parse(&binding_vec[1])?;
+            Ok((String::from(binding_name), binding_val))
         })
-        .collect();
-    parsed_bindings.and_then(|bindings_vec| {
-        parse(&rest[1])
-            .and_then(|body_expr| Ok(Expr::new(ExprKind::Let(bindings_vec, Box::from(body_expr)))))
-    })
+        .collect::<Result<Vector<(String, Expr)>, ParseError>>()?;
+    let body = parse(&rest[1])?;
+    Ok(Expr::new(ExprKind::Let(bindings_vec, Box::from(body))))
 }
 
 fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -348,264 +255,228 @@ fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
             "Lambda expression has incorrect number of arguments. Perhaps you are missing the return type?",
         ));
     }
-    let args = match unwrap_lambda_args(&rest[0]) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
-
+    let args = unwrap_lambda_args(&rest[0])?;
     if !check_separator(&rest[1], ':') {
         return Err(ParseError::from("Lambda expression does not have the correct separator : between the arguments list and return type."));
     }
-
-    // get the (annotated) return type
-    let ret_type = match parse_type(&rest[2]) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
-    let body = match parse(&rest[3]) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
-
+    let ret_type = parse_type(&rest[2])?;
+    let body = parse(&rest[3])?;
     Ok(Expr::new(ExprKind::Lambda(args, ret_type, Box::from(body))))
 }
 
+fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, ParseError> {
+    let arg_list = args
+        .to_vec()
+        .ok_or_else(|| "Lambda arguments are not in a valid list.")?;
+    arg_list
+        .iter()
+        .map(|arg| {
+            // [x : int] as a vec
+            let arg_vec = arg
+                .to_vec()
+                .ok_or_else(|| "Lambda argument is not a valid list.")?;
+            if arg_vec.len() != 3 {
+                return Err(ParseError::from(
+                    "Lambda argument is missing values or contains extra values.",
+                ));
+            }
+            let arg_name = arg_vec[0]
+                .as_symbol()
+                .ok_or_else(|| "Lambda argument does not have a valid name.")?;
+            if !check_separator(&arg_vec[1], ':') {
+                return Err(ParseError::from(
+                    "Lambda argument does not contain the correct : separator.",
+                ));
+            }
+            let arg_type = parse_type(&arg_vec[2])?;
+            Ok((String::from(arg_name), arg_type))
+        })
+        .collect()
+}
+
 fn parse_make_record(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    let parsed_bindings: Result<Vector<(String, Expr)>, ParseError> = rest
+    let bindings_vec: Vector<(String, Expr)> = rest
         .iter()
         .map(|binding| {
-            let binding_vec = match binding.to_vec() {
-                Some(vec) => vec,
-                None => {
-                    return Err(ParseError::from(
-                        "Value in make-record expression is not a valid list.",
-                    ))
-                }
-            };
+            let binding_vec = binding
+                .to_vec()
+                .ok_or_else(|| "Value in make-record expression is not a valid list.")?;
             if binding_vec.len() != 2 {
                 return Err(ParseError::from(
                     "Value in make-record expression is incomplete or contains extra values.",
                 ));
             }
-
-            binding_vec[0]
+            let binding_name = binding_vec[0]
                 .as_symbol()
-                .ok_or_else(|| ParseError::from("Make-record binding does not have a valid name."))
-                .and_then(|binding_name| {
-                    parse(&binding_vec[1])
-                        .and_then(|binding_val| Ok((String::from(binding_name), binding_val)))
-                })
+                .ok_or_else(|| "Make-record binding does not have a valid name.")?;
+            let binding_val = parse(&binding_vec[1])?;
+            Ok((String::from(binding_name), binding_val))
         })
-        .collect();
-    parsed_bindings.and_then(|bindings_vec| Ok(Expr::new(ExprKind::Record(bindings_vec))))
+        .collect::<Result<Vector<(String, Expr)>, ParseError>>()?;
+    Ok(Expr::new(ExprKind::Record(bindings_vec)))
 }
 
 fn parse_get_record(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 2 {
-        parse(&rest[0]).and_then(|bindings| {
-            rest[1]
-                .as_symbol()
-                .ok_or_else(|| ParseError::from("Env-ref key is not a valid identifier."))
-                .and_then(|key| {
-                    Ok(Expr::new(ExprKind::RecordGet(
-                        Box::from(bindings),
-                        String::from(key),
-                    )))
-                })
-        })
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 2 {
+        return Err(ParseError::from(
             "Env-ref expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let bindings = parse(&rest[0])?;
+    let key = rest[1]
+        .as_symbol()
+        .ok_or_else(|| "Env-ref key is not a valid identifier.")?;
+    Ok(Expr::new(ExprKind::RecordGet(
+        Box::from(bindings),
+        String::from(key),
+    )))
 }
 
 fn parse_begin(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if !rest.is_empty() {
-        match parse_array(&rest) {
-            Ok(exps) => Ok(Expr::new(ExprKind::Begin(exps))),
-            Err(e) => Err(e),
-        }
-    } else {
-        Err(ParseError::from("Begin expression has no arguments."))
+    if rest.is_empty() {
+        return Err(ParseError::from("Begin expression has no arguments."));
     }
+    let exps = parse_array(&rest)?;
+    Ok(Expr::new(ExprKind::Begin(exps)))
 }
 
 fn parse_set_bang(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 2 {
-        rest[0]
-            .as_symbol()
-            .ok_or_else(|| {
-                ParseError::from("Set expression does not have a symbol as its first argument.")
-            })
-            .and_then(|var| {
-                parse(&rest[1]).and_then(|expr| {
-                    Ok(Expr::new(ExprKind::Set(String::from(var), Box::from(expr))))
-                })
-            })
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 2 {
+        return Err(ParseError::from(
             "Set expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let var = rest[0]
+        .as_symbol()
+        .ok_or_else(|| "Set expression does not have a symbol as its first argument.")?;
+    let new_val = parse(&rest[1])?;
+    Ok(Expr::new(ExprKind::Set(
+        String::from(var),
+        Box::from(new_val),
+    )))
 }
 
-// This is parsed separately from other binary operators since it has a type
-// which is not statically determined, so it would require adding extra
-// complexity to the binary operator type checking function
 fn parse_cons(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 2 {
-        parse(&rest[0]).and_then(|arg1| {
-            parse(&rest[1])
-                .and_then(|arg2| Ok(Expr::new(ExprKind::Cons(Box::from(arg1), Box::from(arg2)))))
-        })
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 2 {
+        return Err(ParseError::from(
             "Cons expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let first = parse(&rest[0])?;
+    let second = parse(&rest[1])?;
+    Ok(Expr::new(ExprKind::Cons(
+        Box::from(first),
+        Box::from(second),
+    )))
 }
 
 fn parse_car(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 1 {
-        parse(&rest[0]).and_then(|exp| Ok(Expr::new(ExprKind::Car(Box::from(exp)))))
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 1 {
+        return Err(ParseError::from(
             "Car expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let pair = parse(&rest[0])?;
+    Ok(Expr::new(ExprKind::Car(Box::from(pair))))
 }
 
 fn parse_cdr(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 1 {
-        parse(&rest[0]).and_then(|exp| Ok(Expr::new(ExprKind::Cdr(Box::from(exp)))))
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 1 {
+        return Err(ParseError::from(
             "Cdr expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let pair = parse(&rest[0])?;
+    Ok(Expr::new(ExprKind::Cdr(Box::from(pair))))
 }
 
 fn parse_is_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 1 {
-        parse(&rest[0]).and_then(|exp| Ok(Expr::new(ExprKind::IsNull(Box::from(exp)))))
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 1 {
+        return Err(ParseError::from(
             "Null? expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let val = parse(&rest[0])?;
+    Ok(Expr::new(ExprKind::IsNull(Box::from(val))))
 }
 
 fn parse_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 1 {
-        match parse_type(&rest[0]) {
-            Ok(typ) => Ok(Expr::new(ExprKind::Null(typ))),
-            Err(e) => Err(e),
-        }
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 1 {
+        return Err(ParseError::from(
             "Null expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let val = parse_type(&rest[0])?;
+    Ok(Expr::new(ExprKind::Null(val)))
 }
 
 fn parse_func(first: &lexpr::Value, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    let func = match parse(first) {
-        Ok(exp) => exp,
-        Err(e) => return Err(e),
-    };
-    let args = match parse_array(rest) {
-        Ok(exps) => exps,
-        Err(e) => return Err(e),
-    };
+    let func = parse(first)?;
+    let args = parse_array(rest)?;
     Ok(Expr::new(ExprKind::FnApp(Box::from(func), args)))
 }
 
 fn parse_make_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    parse_array(&rest).and_then(|vals| Ok(Expr::new(ExprKind::Tuple(vals))))
+    let exps = parse_array(&rest)?;
+    Ok(Expr::new(ExprKind::Tuple(exps)))
 }
 
 fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 2 {
-        parse(&rest[0]).and_then(|env| {
-            parse(&rest[1]).and_then(|key| {
-                Ok(Expr::new(ExprKind::TupleGet(
-                    Box::from(env),
-                    Box::from(key),
-                )))
-            })
-        })
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 2 {
+        return Err(ParseError::from(
             "Tuple-ref expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let tuple = parse(&rest[0])?;
+    let key = parse(&rest[1])?;
+    Ok(Expr::new(ExprKind::TupleGet(
+        Box::from(tuple),
+        Box::from(key),
+    )))
 }
 
 fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 3 {
-        parse(&rest[0]).and_then(|exp| {
-            parse_type(&rest[1]).and_then(|type_var| {
-                parse_type(&rest[2]).and_then(|exist| {
-                    Ok(Expr::new(ExprKind::Pack(Box::from(exp), type_var, exist)))
-                })
-            })
-        })
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 3 {
+        return Err(ParseError::from(
             "Pack expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let package = parse(&rest[0])?;
+    let typ_sub = parse_type(&rest[1])?;
+    let exist_typ = parse_type(&rest[2])?;
+    Ok(Expr::new(ExprKind::Pack(
+        Box::from(package),
+        typ_sub,
+        exist_typ,
+    )))
 }
 
 fn parse_unpack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
-    if rest.len() == 2 {
-        let inner_lst: Vec<lexpr::Value> = match rest[0].to_vec() {
-            Some(val) => val,
-            None => {
-                return Err(ParseError::from(
-                    "First argument in unpack expression is malformed.",
-                ))
-            }
-        };
-
-        if inner_lst.len() != 3 {
-            return Err(ParseError::from(
-                "First argument in unpack expression has incorrect number of values.",
-            ));
-        }
-
-        let var_name: String = match inner_lst[0].as_symbol() {
-            Some(val) => String::from(val),
-            None => return Err(ParseError::from("Unpack expression does not contain an identifier to bind the packed expression to."))
-        };
-
-        let package: Expr = match parse(&inner_lst[1]) {
-            Ok(val) => val,
-            Err(e) => return Err(e),
-        };
-
-        let typ_sub: Type = match parse_type(&inner_lst[2]) {
-            Ok(val) => val,
-            Err(e) => return Err(e),
-        };
-
-        let body: Expr = match parse(&rest[1]) {
-            Ok(val) => val,
-            Err(e) => return Err(e),
-        };
-
-        Ok(Expr::new(ExprKind::Unpack(
-            var_name,
-            Box::from(package),
-            typ_sub,
-            Box::from(body),
-        )))
-    } else {
-        Err(ParseError::from(
+    if rest.len() != 2 {
+        return Err(ParseError::from(
             "Unpack expression has incorrect number of arguments.",
-        ))
+        ));
     }
+    let inner_lst: Vec<lexpr::Value> = rest[0]
+        .to_vec()
+        .ok_or_else(|| "First argument in unpack expression is malformed.")?;
+    if inner_lst.len() != 3 {
+        return Err(ParseError::from(
+            "First argument in unpack expression has incorrect number of values.",
+        ));
+    }
+    let var_name: String = String::from(inner_lst[0].as_symbol().ok_or_else(|| {
+        "Unpack expression does not contain an identifier to bind the packed expression to."
+    })?);
+    let package: Expr = parse(&inner_lst[1])?;
+    let typ_var: Type = parse_type(&inner_lst[2])?;
+    let body: Expr = parse(&rest[1])?;
+    Ok(Expr::new(ExprKind::Unpack(
+        var_name,
+        Box::from(package),
+        typ_var,
+        Box::from(body),
+    )))
 }
 
 pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
@@ -619,14 +490,17 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
         lexpr::Value::Bool(x) => Ok(Expr::new(ExprKind::Bool(*x))),
         lexpr::Value::String(x) => Ok(Expr::new(ExprKind::Str((*x).to_string()))),
         lexpr::Value::Cons(_) => {
-            let lst = match value.to_vec() {
-                Some(vec) => vec,
-                None => return Err(ParseError::from("Cons expression is not a valid list.")),
-            };
-            // our language currently does not assign () to any meaning
+            let lst = value
+                .to_vec()
+                .ok_or_else(|| "Cons expression is not a valid list.")?;
+            // The source language currently does not assign () to any meaning
             if lst.is_empty() {
                 return Err(ParseError::from("Empty list found."));
             }
+
+            // We decide how to parse a list based on the first element in the expression;
+            // in most cases, just the rest of the vector (i.e. the arguments) will get passed
+            // to the individual parsing functions
             let lst_parts = lst.split_at(1);
             let first = &(lst_parts.0)[0];
             let rest = lst_parts.1;

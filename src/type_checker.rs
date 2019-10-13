@@ -215,14 +215,8 @@ fn tc_cons_with_env(
     rest: &Expr,
     env: &mut TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    let car_type = match tc_with_env(first, env) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
-    let cdr_type = match tc_with_env(rest, env) {
-        Ok(typ) => typ,
-        Err(e) => return Err(e),
-    };
+    let car_type = tc_with_env(first, env)?;
+    let cdr_type = tc_with_env(rest, env)?;
     match cdr_type {
         Type::List(boxed_type) => {
             if *boxed_type == car_type {
@@ -342,10 +336,7 @@ fn tc_apply_with_env(
 ) -> Result<Type, TypeCheckError> {
     match tc_with_env(func, env) {
         Ok(typ) => {
-            let param_types = match tc_array_with_env(&args, env) {
-                Ok(val) => val,
-                Err(e) => return Err(e),
-            };
+            let param_types = tc_array_with_env(&args, env)?;
             check_lambda_type_with_inputs(&typ, &param_types)
         }
         Err(e) => Err(e),
@@ -433,10 +424,7 @@ fn tc_pack_with_env(
 ) -> Result<Type, TypeCheckError> {
     if let Type::Exists(type_var, base_typ) = exist {
         // substitute "sub" for all occurrences of type_var (the quantified type) in exist
-        let substituted_type = match type_substitute(base_typ, *type_var, sub) {
-            Ok(val) => val,
-            Err(e) => return Err(e),
-        };
+        let substituted_type = type_substitute(base_typ, *type_var, sub)?;
         // now check if the type of "substituted" matches the type of the packed expression
         tc_with_env(packed_exp, env).and_then(|packed_type| {
             if packed_type == substituted_type {
@@ -472,10 +460,7 @@ fn tc_unpack_with_env(
     };
 
     // Calculate the existential type of the package
-    let package_typ = match tc_with_env(package, env) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
+    let package_typ = tc_with_env(package, env)?;
     // Get the type variable of the existential type
     let package_typ_var = match &package_typ {
         Type::Exists(inner_typ_var, _base_typ) => *inner_typ_var,
@@ -495,10 +480,7 @@ fn tc_unpack_with_env(
         }
     };
     // Substitute in the unpack type var for the type var in the base type
-    let spackage_base_typ = match type_substitute(&package_base_typ, package_typ_var, typ_var) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
+    let spackage_base_typ = type_substitute(&package_base_typ, package_typ_var, typ_var)?;
     match tc_with_env(
         dbg!(body),
         &mut env.add_binding((String::from(var), spackage_base_typ.clone())),

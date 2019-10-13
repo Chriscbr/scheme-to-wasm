@@ -85,13 +85,14 @@ pub enum ExprKind {
     Cdr(Box<Expr>),
     IsNull(Box<Expr>),
     Null(Type),
-    FnApp(Box<Expr>, Vector<Expr>),             // func, arguments
-    Tuple(Vector<Expr>),                        // list of expressions, type annotation
-    TupleGet(Box<Expr>, Box<Expr>),             // env, index - index must explicitly be a number
-    Pack(Box<Expr>, Type, Type),                // exp, type substitution, existential type
+    FnApp(Box<Expr>, Vector<Expr>), // func, arguments
+    Tuple(Vector<Expr>),            // list of expressions, type annotation
+    // TODO: change second argument of TupleGet to u64
+    TupleGet(Box<Expr>, Box<Expr>), // env, index - index must explicitly be a number
+    Pack(Box<Expr>, Type, Type),    // exp, type substitution, existential type
     Unpack(String, Box<Expr>, Type, Box<Expr>), // new var, package, type substitution, body
-    Record(Vector<(String, Expr)>),             // map from values to labels
-    RecordGet(Box<Expr>, String),               // record, label
+    Record(Vector<(String, Expr)>), // map from values to labels
+    RecordGet(Box<Expr>, String),   // record, label
     Id(String),
     Num(i64),
     Bool(bool),

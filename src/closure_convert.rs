@@ -59,17 +59,11 @@ fn cc_lambda(
     env: &TypeEnv<Type>,
 ) -> Result<Expr, ClosureConvertError> {
     // Closure convert the body, with knowledge of the types of the lambda's parameters
-    let mut new_body = match cc(body, &env.add_bindings(params.clone())) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
+    let mut new_body = cc(body, &env.add_bindings(params.clone()))?;
 
     // Calculate the set of free variables in the lambda
     // which is the free variables in the body, minus the variables bound by the parameters
-    let free_vars = match get_free_vars_lambda(&params, &new_body) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
+    let free_vars = get_free_vars_lambda(&params, &new_body)?;
 
     // Construct the environment name
     let env_name: String = generate_env_name();
@@ -85,17 +79,14 @@ fn cc_lambda(
     // Substitute free variables in the body with references to the environment
     // ex. if y is free, replace it with (env-ref envX y)
     for var in &free_vars {
-        new_body = match substitute(
+        new_body = substitute(
             &new_body,
             &var.clone(),
             &Expr::new(ExprKind::RecordGet(
                 Box::from(Expr::new(ExprKind::Id(env_name.clone()))),
                 var.clone(),
             )),
-        ) {
-            Ok(val) => val,
-            Err(e) => return Err(e),
-        };
+        )?;
     }
 
     let free_var_types: Vector<(String, Type)> = free_vars
@@ -175,20 +166,14 @@ fn substitute(
                         .and_then(|sexp| Ok((pair.0.clone(), sexp)))
                 })
                 .collect();
-            let bindings_sub: Vector<(String, Expr)> = match bindings_sub {
-                Ok(val) => val,
-                Err(e) => return Err(e),
-            };
+            let bindings_sub: Vector<(String, Expr)> = bindings_sub?;
             substitute(&body, match_exp, replace_with)
                 .and_then(|sbody| Ok(Expr::new(ExprKind::Let(bindings_sub, Box::from(sbody)))))
         }
         ExprKind::Lambda(params, ret_type, body) => {
             let param_names: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
             if !param_names.contains(&String::from(match_exp)) {
-                let sbody = match substitute(&body, match_exp, replace_with) {
-                    Ok(val) => val,
-                    Err(e) => return Err(e),
-                };
+                let sbody = substitute(&body, match_exp, replace_with)?;
                 Ok(Expr::new(ExprKind::Lambda(
                     params.clone(),
                     ret_type.clone(),
@@ -317,10 +302,7 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         }),
         ExprKind::Let(bindings, body) => {
             let binding_vars: Vector<String> = bindings.iter().map(|pair| pair.0.clone()).collect();
-            let mut body_vars = match get_free_vars(&body) {
-                Ok(val) => val,
-                Err(e) => return Err(e),
-            };
+            let mut body_vars = get_free_vars(&body)?;
             body_vars.retain(|var| !binding_vars.contains(var));
             Ok(body_vars)
         }
@@ -343,10 +325,7 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         ExprKind::TupleGet(tuple, _key) => get_free_vars(&tuple),
         ExprKind::Pack(val, _sub, _exist) => get_free_vars(&val),
         ExprKind::Unpack(var, _package, _typ_sub, body) => {
-            let mut body_vars = match get_free_vars(&body) {
-                Ok(val) => val,
-                Err(e) => return Err(e),
-            };
+            let mut body_vars = get_free_vars(&body)?;
             body_vars.retain(|body_var| body_var != var);
             Ok(body_vars)
         }
@@ -364,10 +343,7 @@ fn get_free_vars_lambda(
     body: &Expr,
 ) -> Result<Vector<String>, ClosureConvertError> {
     let param_vars: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
-    let mut free_vars: Vector<String> = match get_free_vars(body) {
-        Ok(val) => val,
-        Err(e) => return Err(e),
-    };
+    let mut free_vars: Vector<String> = get_free_vars(body)?;
     free_vars.retain(|var| !param_vars.contains(var));
     Ok(free_vars)
 }
@@ -403,7 +379,7 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
             })
         }),
         ExprKind::Let(bindings, body) => {
-            let binding_type_map: Vector<(String, Type)> = match bindings
+            let binding_type_map = bindings
                 .iter()
                 .map(|pair| match type_check(&pair.1) {
                     Ok(exp_typ) => Ok((pair.0.clone(), exp_typ)),
@@ -412,11 +388,7 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                         e
                     ))),
                 })
-                .collect()
-            {
-                Ok(val) => val,
-                Err(e) => return Err(e),
-            };
+                .collect::<Result<Vector<(String, Type)>, ClosureConvertError>>()?;
             cc_bindings(&bindings, env).and_then(|cbindings| {
                 cc(&body, &env.add_bindings(binding_type_map))
                     .and_then(|cbody| Ok(Expr::new(ExprKind::Let(cbindings, Box::from(cbody)))))
@@ -486,10 +458,10 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
             })
         }),
         ExprKind::FnApp(func, args) => {
-            let cargs: Vector<Expr> = match args.iter().map(|arg| cc(&arg, env)).collect() {
-                Ok(val) => val,
-                Err(e) => return Err(e),
-            };
+            let cargs: Vector<Expr> = args
+                .iter()
+                .map(|arg| cc(&arg, env))
+                .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
             cc(&func, env).and_then(|cfunc| Ok(Expr::new(ExprKind::FnApp(Box::from(cfunc), cargs))))
         }
     }
