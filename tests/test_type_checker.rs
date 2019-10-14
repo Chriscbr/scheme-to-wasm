@@ -701,3 +701,30 @@ fn test_typecheck_unpack_sad() {
     .unwrap();
     assert_eq!(type_check(&exp).is_err(), true);
 }
+
+#[test]
+fn test_typecheck_adt() {
+    let exp = parse(
+        &lexpr::from_str(
+            "(pack (make-record (new 1)
+                   (get (lambda ((i : int)) : int i))
+                   (inc (lambda ((i : int)) : int (+ i 1))))
+      int
+      (exists T0 (record (new : T0)
+                         (get : (-> T0 int))
+                         (inc : (-> T0 T0)))))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let typ = parse_type(
+        &lexpr::from_str(
+            "(exists T0 (record (new : T0)
+                         (get : (-> T0 int))
+                         (inc : (-> T0 T0))))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(type_check(&exp).unwrap(), typ);
+}
