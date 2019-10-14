@@ -446,6 +446,37 @@ fn test_typecheck_lambda_happy() {
 }
 
 #[test]
+fn test_typecheck_nested_lambdas() {
+    let exp = parse(
+        &lexpr::from_str(
+            "(let ((a 3))
+  (lambda ((f : (-> int int))) : (-> int)
+    (lambda () : int (f a))))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let expected = parse_type(&lexpr::from_str("(-> (-> int int) (-> int))").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), expected);
+
+    let exp = parse(
+        &lexpr::from_str(
+            r#"(let ((a 3))
+  (lambda ((f : (-> int int int int))) : (-> int (-> int int))
+     (lambda ((z : int)) : (-> int int)
+       (lambda ((x : int)) : int
+         (f x z a)))))"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let expected =
+        parse_type(&lexpr::from_str("(-> (-> int int int int) (-> int (-> int int)))").unwrap())
+            .unwrap();
+    assert_eq!(type_check(&exp).unwrap(), expected);
+}
+
+#[test]
 fn test_typecheck_lambda_sad() {
     // mismatched return type
     let exp = lexpr::from_str("(lambda () : bool 3)").unwrap();
@@ -459,7 +490,7 @@ fn test_typecheck_lambda_sad() {
 }
 
 #[test]
-fn test_type_check_apply_happy() {
+fn test_typecheck_apply_happy() {
     let exp = lexpr::from_str("((lambda () : int 3))").unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(type_check(&exp).unwrap(), Type::Int);
@@ -478,7 +509,7 @@ fn test_type_check_apply_happy() {
 }
 
 #[test]
-fn test_type_check_apply_hof_happy() {
+fn test_typecheck_apply_hof_happy() {
     // Note: this is basically (apply (lambda equivalent to <) 3 5)
     let exp = lexpr::from_str("((lambda ((fn : (-> int int bool)) (x : int) (y : int)) : bool (fn x y)) (lambda ((a : int) (b : int)) : bool (< a b)) 3 5)").unwrap();
     let exp = parse(&exp).unwrap();
@@ -508,7 +539,7 @@ fn test_type_check_apply_hof_happy() {
 }
 
 #[test]
-fn test_type_check_apply_sad() {
+fn test_typecheck_apply_sad() {
     // missing parameters
     let exp = lexpr::from_str("((lambda ((x : int)) : bool (< x 5)))").unwrap();
     let exp = parse(&exp).unwrap();
@@ -526,7 +557,7 @@ fn test_type_check_apply_sad() {
 }
 
 #[test]
-fn test_type_check_pack_happy() {
+fn test_typecheck_pack_happy() {
     // show that multiple types can inhabit an existential type
     let exp = parse(&lexpr::from_str("(pack 3 int (exists T0 T0))").unwrap()).unwrap();
     let typ = parse_type(&lexpr::from_str("(exists T0 T0)").unwrap()).unwrap();
@@ -574,7 +605,7 @@ fn test_type_check_pack_happy() {
 }
 
 #[test]
-fn test_type_check_pack_sad() {
+fn test_typecheck_pack_sad() {
     let exp = parse(&lexpr::from_str("(pack true int (exists T0 T0))").unwrap()).unwrap();
     assert_eq!(type_check(&exp).is_err(), true);
 
@@ -590,7 +621,7 @@ fn test_type_check_pack_sad() {
 }
 
 #[test]
-fn test_type_check_unpack_happy() {
+fn test_typecheck_unpack_happy() {
     let exp = parse(
         &lexpr::from_str(
             r#"
@@ -630,7 +661,7 @@ fn test_type_check_unpack_happy() {
 }
 
 #[test]
-fn test_type_check_unpack_sad() {
+fn test_typecheck_unpack_sad() {
     // q.a is not guaranteed to be a number in the existential type,
     // so we cannot use it (and add to it) concretely as such
     let exp = parse(

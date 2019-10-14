@@ -1,5 +1,5 @@
 use crate::common::{Expr, ExprKind, Type, TypeEnv};
-use crate::type_checker::type_check;
+use crate::type_checker::{tc_with_env, type_check};
 use crate::util::concat_vectors;
 use im_rc::{vector, Vector};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -116,12 +116,49 @@ fn cc_lambda(
     let mut new_params = params.clone();
     new_params.push_front((env_name.clone(), Type::Record(free_var_types.clone())));
 
+    let new_ret_typ = tc_with_env(&new_body, &mut env.add_bindings(new_params.clone()))
+        .map_err(|_| "Type checking on closure converted lambda body failed.")?;
+
     let new_lambda = Expr::new(ExprKind::Lambda(
         new_params,
-        ret_type.clone(),
+        new_ret_typ,
         Box::from(new_body),
     ));
     Ok(Expr::new(ExprKind::Tuple(vector![new_lambda, new_env])))
+}
+
+fn cc_fn_app(
+    func: &Expr,
+    args: &Vector<Expr>,
+    env: &TypeEnv<Type>,
+) -> Result<Expr, ClosureConvertError> {
+    match &func.kind {
+        ExprKind::Lambda(_params, _ret_typ, _body) => {
+            let cfunc = cc(&func, env)?;
+            let mut cargs: Vector<Expr> = args
+                .iter()
+                .map(|arg| cc(&arg, env))
+                .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
+            let temp_var = generate_var_name();
+            let temp_id = Expr::new(ExprKind::Id(temp_var.clone()));
+            let get_func = Expr::new(ExprKind::TupleGet(Box::from(temp_id.clone()), 0));
+            let get_env = Expr::new(ExprKind::TupleGet(Box::from(temp_id.clone()), 1));
+            cargs.push_front(get_env);
+            let new_body = Expr::new(ExprKind::FnApp(Box::from(get_func), cargs));
+            Ok(Expr::new(ExprKind::Let(
+                vector![(temp_var, cfunc)],
+                Box::from(new_body),
+            )))
+        }
+        _ => {
+            let cfunc = cc(&func, env)?;
+            let cargs: Vector<Expr> = args
+                .iter()
+                .map(|arg| cc(&arg, env))
+                .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
+            Ok(Expr::new(ExprKind::FnApp(Box::from(cfunc), cargs)))
+        }
+    }
 }
 
 fn substitute_array(
@@ -298,10 +335,14 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
             })
         }),
         ExprKind::Let(bindings, body) => {
+            let binding_exps: Vector<Expr> = bindings.iter().map(|pair| pair.1.clone()).collect();
             let binding_vars: Vector<String> = bindings.iter().map(|pair| pair.0.clone()).collect();
             let mut body_vars = get_free_vars(&body)?;
             body_vars.retain(|var| !binding_vars.contains(var));
-            Ok(body_vars)
+            Ok(concat_vectors(
+                body_vars,
+                get_free_vars_array(&binding_exps)?,
+            ))
         }
         ExprKind::Lambda(params, _ret_type, body) => get_free_vars_lambda(&params, &body),
         ExprKind::FnApp(func, args) => {
@@ -349,6 +390,12 @@ pub fn closure_convert(exp: &Expr) -> Result<Expr, ClosureConvertError> {
     cc(exp, &TypeEnv::new())
 }
 
+/// Q: Why is a type environment needed for closure conversion?
+/// A: When closure converting lambdas, it is necessary to keep track of types
+/// (especially as we try to closure convert lambdas within other lambdas) of
+/// outer lambdas so that we can properly generate the right type signatures
+/// of record environments (i.e. the "envX" which becomes the first argument
+/// of all new lambdas).
 fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
     match &exp.kind {
         ExprKind::Num(x) => Ok(Expr::new(ExprKind::Num(*x))),
@@ -450,22 +497,6 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                 )))
             })
         }),
-        ExprKind::FnApp(func, args) => {
-            let cfunc = cc(&func, env)?; // this could be a tuple or an identifier
-            let mut cargs: Vector<Expr> = args
-                .iter()
-                .map(|arg| cc(&arg, env))
-                .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
-            let temp_var = generate_var_name();
-            let temp_id = Expr::new(ExprKind::Id(temp_var.clone()));
-            let get_func = Expr::new(ExprKind::TupleGet(Box::from(temp_id.clone()), 0));
-            let get_env = Expr::new(ExprKind::TupleGet(Box::from(temp_id.clone()), 1));
-            cargs.push_front(get_env);
-            let new_body = Expr::new(ExprKind::FnApp(Box::from(get_func), cargs));
-            Ok(Expr::new(ExprKind::Let(
-                vector![(temp_var, cfunc)],
-                Box::from(new_body),
-            )))
-        }
+        ExprKind::FnApp(func, args) => cc_fn_app(func, args, env),
     }
 }

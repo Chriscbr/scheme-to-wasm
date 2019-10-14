@@ -40,7 +40,11 @@ impl std::fmt::Display for Type {
             Type::Str => write!(f, "string"),
             Type::List(typ) => write!(f, "(list {})", typ),
             Type::Func(in_typs, ret_typ) => {
-                write!(f, "(-> {} {})", format_vector(in_typs.clone()), ret_typ)
+                if in_typs.is_empty() {
+                    write!(f, "(-> {})", ret_typ)
+                } else {
+                    write!(f, "(-> {} {})", format_vector(in_typs.clone()), ret_typ)
+                }
             }
             Type::Tuple(typs) => write!(f, "(tuple {})", format_vector(typs.clone())),
             Type::Record(bindings) => {
