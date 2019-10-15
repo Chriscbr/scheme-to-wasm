@@ -80,6 +80,7 @@ impl Expr {
     }
 }
 
+// TODO: Remove all "Box"'s from fields
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprKind {
     Binop(BinOp, Box<Expr>, Box<Expr>),     // operator, arg1, arg2
@@ -93,11 +94,12 @@ pub enum ExprKind {
     Cdr(Box<Expr>),
     IsNull(Box<Expr>),
     Null(Type),
-    FnApp(Box<Expr>, Vector<Expr>),             // func, arguments
-    Tuple(Vector<Expr>),                        // list of expressions, type annotation
-    TupleGet(Box<Expr>, u64),                   // env, index - index must explicitly be a number
-    Pack(Box<Expr>, Type, Type),                // exp, type substitution, existential type
-    Unpack(String, Box<Expr>, Type, Box<Expr>), // new var, package, type substitution, body
+    FnApp(Box<Expr>, Vector<Expr>), // func, arguments
+    Tuple(Vector<Expr>),            // list of expressions, type annotation
+    TupleGet(Box<Expr>, u64),       // env, index - index must explicitly be a number
+    Pack(Box<Expr>, Type, Type),    // exp, type substitution, existential type
+    // TODO: change third argument to u64 to enforce that it is abstract type?
+    Unpack(String, Box<Expr>, Type, Box<Expr>), // new var, package, type var, body
     Record(Vector<(String, Expr)>),             // map from values to labels
     RecordGet(Box<Expr>, String),               // record, label
     Id(String),

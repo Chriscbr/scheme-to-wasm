@@ -535,7 +535,7 @@ fn test_typecheck_apply_hof_happy() {
     ); // (-> (-> int int) (list int) (list int))
     let mut env = TypeEnv::new();
     env = env.add_binding((String::from("map"), map_type.clone()));
-    assert_eq!(tc_with_env(&exp, &mut env).unwrap(), map_type);
+    assert_eq!(tc_with_env(&exp, &env).unwrap(), map_type);
 }
 
 #[test]

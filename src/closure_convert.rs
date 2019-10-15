@@ -1,5 +1,5 @@
 use crate::common::{Expr, ExprKind, Type, TypeEnv};
-use crate::type_checker::{tc_with_env, type_check};
+use crate::type_checker::type_check;
 use crate::util::concat_vectors;
 use im_rc::{vector, Vector};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,6 +17,12 @@ fn generate_var_name() -> String {
     let name = format!("temp{}", GENSYM_COUNT.load(Ordering::SeqCst));
     GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
     name
+}
+
+fn generate_id() -> u64 {
+    let val = GENSYM_COUNT.load(Ordering::SeqCst);
+    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
+    val
 }
 
 /// Only use this for testing purposes!
@@ -46,6 +52,51 @@ impl std::error::Error for ClosureConvertError {
         // Generic error, underlying cause isn't tracked.
         None
     }
+}
+
+fn cc_type(typ: &Type) -> Result<Type, ClosureConvertError> {
+    match typ {
+        Type::Int => Ok(Type::Int),
+        Type::Bool => Ok(Type::Bool),
+        Type::Str => Ok(Type::Str),
+        Type::List(base_typ) => {
+            let cc_base_typ = cc_type(base_typ)?;
+            Ok(Type::List(Box::from(cc_base_typ)))
+        }
+        Type::Func(in_typs, ret_typ) => {
+            let mut cc_in_typs = cc_type_array(in_typs)?;
+            let cc_ret_typ = cc_type(ret_typ)?;
+            let typ_var_id = generate_id();
+            let typ_var = Type::TypeVar(typ_var_id);
+            cc_in_typs.push_front(typ_var.clone());
+            let base_typ = Type::Tuple(vector![
+                Type::Func(cc_in_typs, Box::from(cc_ret_typ),),
+                typ_var.clone()
+            ]);
+            Ok(Type::Exists(typ_var_id, Box::from(base_typ)))
+        }
+        Type::Tuple(typs) => {
+            let cc_typs = cc_type_array(typs)?;
+            Ok(Type::Tuple(cc_typs))
+        }
+        Type::Record(bindings) => {
+            let cc_bindings = bindings
+                .iter()
+                .map(|pair| Ok((pair.0.clone(), cc_type(&pair.1)?)))
+                .collect::<Result<Vector<(String, Type)>, ClosureConvertError>>()?;
+            Ok(Type::Record(cc_bindings))
+        }
+        Type::Exists(typ_var, base_typ) => {
+            let cc_base_typ = cc_type(base_typ)?;
+            Ok(Type::Exists(*typ_var, Box::from(cc_base_typ)))
+        }
+        Type::TypeVar(x) => Ok(Type::TypeVar(*x)),
+        Type::Unknown => Ok(Type::Unknown),
+    }
+}
+
+fn cc_type_array(typs: &Vector<Type>) -> Result<Vector<Type>, ClosureConvertError> {
+    typs.iter().map(|typ| Ok(cc_type(typ)?)).collect()
 }
 
 fn cc_bindings(
@@ -99,32 +150,46 @@ fn cc_lambda(
         .iter()
         .cloned()
         .map(|var| {
-            (
+            Ok((
                 var.clone(),
-                env.find(&var)
-                    .or_else(|| Some(&Type::Unknown))
-                    .unwrap()
-                    .clone(),
-            )
+                cc_type(env.find(&var).ok_or_else(|| {
+                    "No type found for free variable during closure conversion."
+                })?)?,
+            ))
         })
-        .collect();
+        .collect::<Result<Vector<(String, Type)>, ClosureConvertError>>()?;
 
     // Construct new parameter list
     // Same as original parameter list, except an environment is appended to the beginning
     // ex. (lambda ((x : int) (y : int)) <body>)
     //  -> (lambda ((env : (record <free var types>)) (x : int) (y : int)) <body>)
-    let mut new_params = params.clone();
-    new_params.push_front((env_name.clone(), Type::Record(free_var_types.clone())));
+    // In addition, types are closure converted as needed
+    // (ex. function types are replaced with existential types)
+    let mut new_params = params
+        .iter()
+        .cloned()
+        .map(|pair| Ok((pair.0.clone(), cc_type(&pair.1)?)))
+        .collect::<Result<Vector<(String, Type)>, ClosureConvertError>>()?;
+    let record_typ = Type::Record(free_var_types.clone());
+    new_params.push_front((env_name.clone(), record_typ.clone()));
 
-    let new_ret_typ = tc_with_env(&new_body, &mut env.add_bindings(new_params.clone()))
-        .map_err(|_| "Type checking on closure converted lambda body failed.")?;
+    let new_ret_typ = cc_type(&ret_type.clone())?;
 
     let new_lambda = Expr::new(ExprKind::Lambda(
-        new_params,
-        new_ret_typ,
+        new_params.clone(),
+        new_ret_typ.clone(),
         Box::from(new_body),
     ));
-    Ok(Expr::new(ExprKind::Tuple(vector![new_lambda, new_env])))
+
+    let orig_param_typs = params.clone().iter().map(|pair| pair.1.clone()).collect();
+    let new_lambda_typ = cc_type(&Type::Func(orig_param_typs, Box::from(ret_type.clone())))?;
+
+    let new_closure = Expr::new(ExprKind::Tuple(vector![new_lambda, new_env]));
+    Ok(Expr::new(ExprKind::Pack(
+        Box::from(new_closure),
+        record_typ.clone(),
+        new_lambda_typ,
+    )))
 }
 
 fn cc_fn_app(
@@ -132,33 +197,24 @@ fn cc_fn_app(
     args: &Vector<Expr>,
     env: &TypeEnv<Type>,
 ) -> Result<Expr, ClosureConvertError> {
-    match &func.kind {
-        ExprKind::Lambda(_params, _ret_typ, _body) => {
-            let cfunc = cc(&func, env)?;
-            let mut cargs: Vector<Expr> = args
-                .iter()
-                .map(|arg| cc(&arg, env))
-                .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
-            let temp_var = generate_var_name();
-            let temp_id = Expr::new(ExprKind::Id(temp_var.clone()));
-            let get_func = Expr::new(ExprKind::TupleGet(Box::from(temp_id.clone()), 0));
-            let get_env = Expr::new(ExprKind::TupleGet(Box::from(temp_id.clone()), 1));
-            cargs.push_front(get_env);
-            let new_body = Expr::new(ExprKind::FnApp(Box::from(get_func), cargs));
-            Ok(Expr::new(ExprKind::Let(
-                vector![(temp_var, cfunc)],
-                Box::from(new_body),
-            )))
-        }
-        _ => {
-            let cfunc = cc(&func, env)?;
-            let cargs: Vector<Expr> = args
-                .iter()
-                .map(|arg| cc(&arg, env))
-                .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
-            Ok(Expr::new(ExprKind::FnApp(Box::from(cfunc), cargs)))
-        }
-    }
+    let tuple_name = generate_var_name();
+    let tuple_name_id = Expr::new(ExprKind::Id(tuple_name.clone()));
+    let package = cc(func, env)?;
+    let typ_var = Type::TypeVar(generate_id());
+    let tuple_func = Expr::new(ExprKind::TupleGet(Box::from(tuple_name_id.clone()), 0));
+    let tuple_env = Expr::new(ExprKind::TupleGet(Box::from(tuple_name_id), 1));
+    let cc_args = args
+        .iter()
+        .map(|arg| cc(arg, env))
+        .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
+    let new_args = concat_vectors(vector![tuple_env], cc_args);
+    let body = Expr::new(ExprKind::FnApp(Box::from(tuple_func), new_args));
+    Ok(Expr::new(ExprKind::Unpack(
+        tuple_name,
+        Box::from(package),
+        typ_var,
+        Box::from(body),
+    )))
 }
 
 fn substitute_array(
@@ -368,10 +424,10 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         ExprKind::Tuple(vals) => get_free_vars_array(&vals),
         ExprKind::TupleGet(tuple, _key) => get_free_vars(&tuple),
         ExprKind::Pack(val, _sub, _exist) => get_free_vars(&val),
-        ExprKind::Unpack(var, _package, _typ_sub, body) => {
-            let mut body_vars = get_free_vars(&body)?;
-            body_vars.retain(|body_var| body_var != var);
-            Ok(body_vars)
+        ExprKind::Unpack(var, package, _typ_sub, body) => {
+            let mut free_vars = concat_vectors(get_free_vars(&package)?, get_free_vars(&body)?);
+            free_vars.retain(|free_var| free_var != var);
+            Ok(free_vars)
         }
         ExprKind::IsNull(val) => get_free_vars(val.as_ref()),
         ExprKind::Null(_) => Ok(vector![]),
@@ -429,7 +485,10 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
             })
         }),
         ExprKind::Let(bindings, body) => {
-            let binding_type_map = bindings
+            // We need a map of the types for the bindings to ensure that we can properly
+            // closure convert the body of the let expression
+            let cbindings = cc_bindings(&bindings, env)?;
+            let binding_type_map = cbindings
                 .iter()
                 .map(|pair| match type_check(&pair.1) {
                     Ok(exp_typ) => Ok((pair.0.clone(), exp_typ)),
@@ -439,10 +498,8 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                     ))),
                 })
                 .collect::<Result<Vector<(String, Type)>, ClosureConvertError>>()?;
-            cc_bindings(&bindings, env).and_then(|cbindings| {
-                cc(&body, &env.add_bindings(binding_type_map))
-                    .and_then(|cbody| Ok(Expr::new(ExprKind::Let(cbindings, Box::from(cbody)))))
-            })
+            cc(&body, &env.add_bindings(binding_type_map))
+                .and_then(|cbody| Ok(Expr::new(ExprKind::Let(cbindings, Box::from(cbody)))))
         }
         ExprKind::Lambda(params, ret_typ, body) => cc_lambda(&params, &ret_typ, &body, env),
         ExprKind::Begin(exps) => {
@@ -470,7 +527,7 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
         ExprKind::IsNull(val) => {
             cc(&val, env).and_then(|cval| Ok(Expr::new(ExprKind::IsNull(Box::from(cval)))))
         }
-        ExprKind::Null(typ) => Ok(Expr::new(ExprKind::Null(typ.clone()))),
+        ExprKind::Null(typ) => Ok(Expr::new(ExprKind::Null(cc_type(typ)?))),
         ExprKind::Tuple(exps) => {
             let cexps_wrapped: Result<Vector<Expr>, ClosureConvertError> =
                 exps.iter().map(|subexp| cc(&subexp, env)).collect();
@@ -486,23 +543,17 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                 key.clone(),
             )))
         }),
-        ExprKind::Pack(val, sub, exist) => cc(&val, env).and_then(|cval| {
-            Ok(Expr::new(ExprKind::Pack(
-                Box::from(cval),
-                sub.clone(),
-                exist.clone(),
-            )))
-        }),
-        ExprKind::Unpack(var, package, typ_sub, body) => cc(&package, env).and_then(|cpackage| {
-            cc(&body, env).and_then(|cbody| {
-                Ok(Expr::new(ExprKind::Unpack(
-                    var.clone(),
-                    Box::from(cpackage),
-                    typ_sub.clone(),
-                    Box::from(cbody),
-                )))
-            })
-        }),
+        ExprKind::Pack(val, sub, exist) => Ok(Expr::new(ExprKind::Pack(
+            Box::from(cc(&val, env)?),
+            cc_type(sub)?,
+            cc_type(exist)?,
+        ))),
+        ExprKind::Unpack(var, package, typ_sub, body) => Ok(Expr::new(ExprKind::Unpack(
+            var.clone(),
+            Box::from(cc(&package, env)?),
+            cc_type(typ_sub)?,
+            Box::from(cc(&body, env)?),
+        ))),
         ExprKind::FnApp(func, args) => cc_fn_app(func, args, env),
     }
 }
@@ -571,7 +622,7 @@ mod tests {
         let exp = parse(&lexpr::from_str("(lambda ((z : int)) : int x)").unwrap()).unwrap();
         let match_exp = "x";
         let replace_with = parse(&lexpr::from_str("z").unwrap()).unwrap();
-        let expected =
+        let _expected =
             parse(&lexpr::from_str("(lambda ((temp0 : int)) : int z)").unwrap()).unwrap();
         assert_eq!(substitute(&exp, match_exp, &replace_with).is_err(), true);
 
