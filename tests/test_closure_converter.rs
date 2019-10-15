@@ -129,6 +129,35 @@ fn test_closure_convert_apply_lambda_yes_free_vars() {
     assert_eq!(cc_exp, expected_exp);
 }
 
+// #[test]
+// fn test_closure_convert_lambda_by_name() {
+//     let _shared = THE_RESOURCE.lock().unwrap();
+//     dangerously_reset_gensym_count();
+
+//     let exp =
+//         parse(&lexpr::from_str("(let ((f (lambda ((x : int)) : int (+ x 3)))) (f 4))").unwrap())
+//             .unwrap();
+//     let exp_typ = type_check(&exp);
+//     assert_eq!(exp_typ.is_err(), false);
+
+//     let expected_exp = parse(
+//         &lexpr::from_str(
+//             r#"(make-tuple (lambda ((env0 : (record)) (x : int)) : int
+//                             (+ x 3))
+//                            (make-record))"#,
+//         )
+//         .unwrap(),
+//     )
+//     .unwrap();
+//     let cc_exp = closure_convert(&exp).unwrap();
+//     let cc_exp_typ = type_check(&cc_exp);
+//     // assert_eq!(cc_exp_typ.is_err(), false);
+
+//     println!("Source: {}", exp);
+//     println!("Closure converted: {}", cc_exp);
+//     assert_eq!(cc_exp, expected_exp);
+// }
+
 #[test]
 fn test_closure_convert_lambda_with_func_param() {
     let _shared = THE_RESOURCE.lock().unwrap();

@@ -216,6 +216,12 @@ fn substitute(
         ExprKind::Lambda(params, ret_type, body) => {
             let param_names: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
             if !param_names.contains(&String::from(match_exp)) {
+                let sub_free_vars = get_free_vars(&replace_with)?;
+                for param in param_names {
+                    if sub_free_vars.contains(&param) {
+                        return Err(ClosureConvertError::from("Tried to substitute an expression with free variables into a lambda which will result in said free variables getting captured!"));
+                    }
+                }
                 let sbody = substitute(&body, match_exp, replace_with)?;
                 Ok(Expr::new(ExprKind::Lambda(
                     params.clone(),
@@ -498,5 +504,94 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
             })
         }),
         ExprKind::FnApp(func, args) => cc_fn_app(func, args, env),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::parse;
+
+    #[test]
+    fn test_substitute_lambdas() {
+        // [x -> s]x = s
+        let exp = parse(&lexpr::from_str("x").unwrap()).unwrap();
+        let match_exp = "x";
+        let replace_with = parse(&lexpr::from_str("s").unwrap()).unwrap();
+        let expected = parse(&lexpr::from_str("s").unwrap()).unwrap();
+        assert_eq!(
+            substitute(&exp, match_exp, &replace_with).unwrap(),
+            expected
+        );
+
+        // [x -> s]y = y  if y != x
+        let exp = parse(&lexpr::from_str("y").unwrap()).unwrap();
+        let match_exp = "x";
+        let replace_with = parse(&lexpr::from_str("s").unwrap()).unwrap();
+        let expected = parse(&lexpr::from_str("y").unwrap()).unwrap();
+        assert_eq!(
+            substitute(&exp, match_exp, &replace_with).unwrap(),
+            expected
+        );
+
+        // [x -> s](lambda y . t) = (lambda y . [x -> s]t)  if y != x
+        let exp = parse(&lexpr::from_str("(lambda ((y : int)) : int (+ x y))").unwrap()).unwrap();
+        let match_exp = "x";
+        let replace_with = parse(&lexpr::from_str("s").unwrap()).unwrap();
+        let expected =
+            parse(&lexpr::from_str("(lambda ((y : int)) : int (+ s y))").unwrap()).unwrap();
+        assert_eq!(
+            substitute(&exp, match_exp, &replace_with).unwrap(),
+            expected
+        );
+
+        // [x -> s](lambda y . t) = (lambda y . t)  if y == x
+        let exp = parse(&lexpr::from_str("(lambda ((x : int)) : int (+ x y))").unwrap()).unwrap();
+        let match_exp = "x";
+        let replace_with = parse(&lexpr::from_str("s").unwrap()).unwrap();
+        let expected =
+            parse(&lexpr::from_str("(lambda ((x : int)) : int (+ x y))").unwrap()).unwrap();
+        assert_eq!(
+            substitute(&exp, match_exp, &replace_with).unwrap(),
+            expected
+        );
+
+        // [x -> y](lambda x . x) = (lambda x . x)
+        let exp = parse(&lexpr::from_str("(lambda ((x : int)) : int x)").unwrap()).unwrap();
+        let match_exp = "x";
+        let replace_with = parse(&lexpr::from_str("y").unwrap()).unwrap();
+        let expected = parse(&lexpr::from_str("(lambda ((x : int)) : int x)").unwrap()).unwrap();
+        assert_eq!(
+            substitute(&exp, match_exp, &replace_with).unwrap(),
+            expected
+        );
+
+        // [x -> z](lambda z . x) = (lambda w . z)
+        // We do not currently support this, so we will just assert that it generates an error.
+        let exp = parse(&lexpr::from_str("(lambda ((z : int)) : int x)").unwrap()).unwrap();
+        let match_exp = "x";
+        let replace_with = parse(&lexpr::from_str("z").unwrap()).unwrap();
+        let expected =
+            parse(&lexpr::from_str("(lambda ((temp0 : int)) : int z)").unwrap()).unwrap();
+        assert_eq!(substitute(&exp, match_exp, &replace_with).is_err(), true);
+
+        // [x -> (lambda z . z w)](lambda y . x) = (lambda y . (lambda z. z w))
+        // This fails because our substitute method does not change type annotations etc.
+        // let exp = parse(&lexpr::from_str("(lambda ((y : int)) : int x)").unwrap()).unwrap();
+        // let match_exp = "x";
+        // let replace_with =
+        //     parse(&lexpr::from_str("(lambda ((z : (-> int int))) : int (z w))").unwrap()).unwrap();
+        // let expected = parse(
+        //     &lexpr::from_str(
+        //         "(lambda ((y : int)) : (-> (-> int int) int)
+        //     (lambda ((z : (-> int int))) : int (z w)))",
+        //     )
+        //     .unwrap(),
+        // )
+        // .unwrap();
+        // assert_eq!(
+        //     substitute(&exp, match_exp, &replace_with).unwrap(),
+        //     expected
+        // );
     }
 }
