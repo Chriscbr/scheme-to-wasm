@@ -446,7 +446,7 @@ fn tc_array_with_env(
 }
 
 pub fn tc_with_env(value: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeCheckError> {
-    match &value.kind {
+    match &*value.kind {
         ExprKind::Num(_) => Ok(Type::Int),
         ExprKind::Bool(_) => Ok(Type::Bool),
         ExprKind::Str(_) => Ok(Type::Str),
@@ -460,8 +460,8 @@ pub fn tc_with_env(value: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeCheckE
         ExprKind::Lambda(params, ret_typ, body) => {
             tc_lambda_with_env(&params, &ret_typ, &body, env)
         }
-        ExprKind::Record(bindings) => tc_record_with_env(bindings, env),
-        ExprKind::RecordGet(record, key) => tc_record_get_with_env(record, key, env),
+        ExprKind::Record(bindings) => tc_record_with_env(&bindings, env),
+        ExprKind::RecordGet(record, key) => tc_record_get_with_env(&record, &key, env),
         ExprKind::Begin(exps) => tc_begin_with_env(&exps, env),
         ExprKind::Set(sym, exp) => tc_set_bang_with_env(&sym, &exp, env),
         ExprKind::Cons(first, rest) => tc_cons_with_env(&first, &rest, env),

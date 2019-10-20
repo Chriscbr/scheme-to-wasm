@@ -182,8 +182,8 @@ fn parse_binop(op: &str, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
             "Binary operator has incorrect number of sub-expressions.",
         ));
     }
-    let exp1 = Box::from(parse(&rest[0])?);
-    let exp2 = Box::from(parse(&rest[1])?);
+    let exp1 = parse(&rest[0])?;
+    let exp2 = parse(&rest[1])?;
     let operator = match op {
         "and" => BinOp::And,
         "or" => BinOp::Or,
@@ -211,11 +211,7 @@ fn parse_if(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let predicate = parse(&rest[0])?;
     let consequent = parse(&rest[1])?;
     let alternate = parse(&rest[2])?;
-    Ok(Expr::new(ExprKind::If(
-        Box::from(predicate),
-        Box::from(consequent),
-        Box::from(alternate),
-    )))
+    Ok(Expr::new(ExprKind::If(predicate, consequent, alternate)))
 }
 
 fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -246,7 +242,7 @@ fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         })
         .collect::<Result<Vector<(String, Expr)>, ParseError>>()?;
     let body = parse(&rest[1])?;
-    Ok(Expr::new(ExprKind::Let(bindings_vec, Box::from(body))))
+    Ok(Expr::new(ExprKind::Let(bindings_vec, body)))
 }
 
 fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -261,7 +257,7 @@ fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     }
     let ret_type = parse_type(&rest[2])?;
     let body = parse(&rest[3])?;
-    Ok(Expr::new(ExprKind::Lambda(args, ret_type, Box::from(body))))
+    Ok(Expr::new(ExprKind::Lambda(args, ret_type, body)))
 }
 
 fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, ParseError> {
@@ -326,10 +322,7 @@ fn parse_get_record(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let key = rest[1]
         .as_symbol()
         .ok_or_else(|| "Env-ref key is not a valid identifier.")?;
-    Ok(Expr::new(ExprKind::RecordGet(
-        Box::from(bindings),
-        String::from(key),
-    )))
+    Ok(Expr::new(ExprKind::RecordGet(bindings, String::from(key))))
 }
 
 fn parse_begin(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -350,10 +343,7 @@ fn parse_set_bang(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         .as_symbol()
         .ok_or_else(|| "Set expression does not have a symbol as its first argument.")?;
     let new_val = parse(&rest[1])?;
-    Ok(Expr::new(ExprKind::Set(
-        String::from(var),
-        Box::from(new_val),
-    )))
+    Ok(Expr::new(ExprKind::Set(String::from(var), new_val)))
 }
 
 fn parse_cons(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -364,10 +354,7 @@ fn parse_cons(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     }
     let first = parse(&rest[0])?;
     let second = parse(&rest[1])?;
-    Ok(Expr::new(ExprKind::Cons(
-        Box::from(first),
-        Box::from(second),
-    )))
+    Ok(Expr::new(ExprKind::Cons(first, second)))
 }
 
 fn parse_car(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -377,7 +364,7 @@ fn parse_car(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ));
     }
     let pair = parse(&rest[0])?;
-    Ok(Expr::new(ExprKind::Car(Box::from(pair))))
+    Ok(Expr::new(ExprKind::Car(pair)))
 }
 
 fn parse_cdr(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -387,7 +374,7 @@ fn parse_cdr(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ));
     }
     let pair = parse(&rest[0])?;
-    Ok(Expr::new(ExprKind::Cdr(Box::from(pair))))
+    Ok(Expr::new(ExprKind::Cdr(pair)))
 }
 
 fn parse_is_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -397,7 +384,7 @@ fn parse_is_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ));
     }
     let val = parse(&rest[0])?;
-    Ok(Expr::new(ExprKind::IsNull(Box::from(val))))
+    Ok(Expr::new(ExprKind::IsNull(val)))
 }
 
 fn parse_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -413,7 +400,7 @@ fn parse_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
 fn parse_func(first: &lexpr::Value, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let func = parse(first)?;
     let args = parse_array(rest)?;
-    Ok(Expr::new(ExprKind::FnApp(Box::from(func), args)))
+    Ok(Expr::new(ExprKind::FnApp(func, args)))
 }
 
 fn parse_make_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -431,7 +418,7 @@ fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let key = rest[1]
         .as_u64()
         .ok_or_else(|| "Second argument in tuple-ref is not an integer.")?;
-    Ok(Expr::new(ExprKind::TupleGet(Box::from(tuple), key)))
+    Ok(Expr::new(ExprKind::TupleGet(tuple, key)))
 }
 
 fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -443,11 +430,7 @@ fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let package = parse(&rest[0])?;
     let typ_sub = parse_type(&rest[1])?;
     let exist_typ = parse_type(&rest[2])?;
-    Ok(Expr::new(ExprKind::Pack(
-        Box::from(package),
-        typ_sub,
-        exist_typ,
-    )))
+    Ok(Expr::new(ExprKind::Pack(package, typ_sub, exist_typ)))
 }
 
 fn parse_unpack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -471,10 +454,7 @@ fn parse_unpack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let typ_var: Type = parse_type(&inner_lst[2])?;
     let body: Expr = parse(&rest[1])?;
     Ok(Expr::new(ExprKind::Unpack(
-        var_name,
-        Box::from(package),
-        typ_var,
-        Box::from(body),
+        var_name, package, typ_var, body,
     )))
 }
 

@@ -68,14 +68,14 @@ impl std::fmt::Display for Type {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expr {
     pub checked_type: Type,
-    pub kind: ExprKind,
+    pub kind: Box<ExprKind>,
 }
 
 impl Expr {
     pub fn new(kind: ExprKind) -> Expr {
         Expr {
             checked_type: Type::Unknown,
-            kind,
+            kind: Box::from(kind),
         }
     }
 }
@@ -83,25 +83,25 @@ impl Expr {
 // TODO: Remove all "Box"'s from fields
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprKind {
-    Binop(BinOp, Box<Expr>, Box<Expr>),     // operator, arg1, arg2
-    If(Box<Expr>, Box<Expr>, Box<Expr>),    // pred, consequent, alternate
-    Let(Vector<(String, Expr)>, Box<Expr>), // variable bindings, body
-    Lambda(Vector<(String, Type)>, Type, Box<Expr>), // arg names/types, return type, body
+    Binop(BinOp, Expr, Expr),                   // operator, arg1, arg2
+    If(Expr, Expr, Expr),                       // pred, consequent, alternate
+    Let(Vector<(String, Expr)>, Expr),          // variable bindings, body
+    Lambda(Vector<(String, Type)>, Type, Expr), // arg names/types, return type, body
     Begin(Vector<Expr>),
-    Set(String, Box<Expr>),
-    Cons(Box<Expr>, Box<Expr>),
-    Car(Box<Expr>),
-    Cdr(Box<Expr>),
-    IsNull(Box<Expr>),
+    Set(String, Expr),
+    Cons(Expr, Expr),
+    Car(Expr),
+    Cdr(Expr),
+    IsNull(Expr),
     Null(Type),
-    FnApp(Box<Expr>, Vector<Expr>), // func, arguments
-    Tuple(Vector<Expr>),            // list of expressions, type annotation
-    TupleGet(Box<Expr>, u64),       // env, index - index must explicitly be a number
-    Pack(Box<Expr>, Type, Type),    // exp, type substitution, existential type
+    FnApp(Expr, Vector<Expr>), // func, arguments
+    Tuple(Vector<Expr>),       // list of expressions, type annotation
+    TupleGet(Expr, u64),       // env, index - index must explicitly be a number
+    Pack(Expr, Type, Type),    // exp, type substitution, existential type
     // TODO: change third argument to u64 to enforce that it is abstract type?
-    Unpack(String, Box<Expr>, Type, Box<Expr>), // new var, package, type var, body
-    Record(Vector<(String, Expr)>),             // map from values to labels
-    RecordGet(Box<Expr>, String),               // record, label
+    Unpack(String, Expr, Type, Expr), // new var, package, type var, body
+    Record(Vector<(String, Expr)>),   // map from values to labels
+    RecordGet(Expr, String),          // record, label
     Id(String),
     Num(i64),
     Bool(bool),
@@ -110,7 +110,7 @@ pub enum ExprKind {
 
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
+        match &*self.kind {
             ExprKind::Binop(op, exp1, exp2) => write!(f, "({} {} {})", op, exp1, exp2),
             ExprKind::If(pred, cons, alt) => write!(f, "(if {} {} {})", pred, cons, alt),
             ExprKind::Let(bindings, body) => {
