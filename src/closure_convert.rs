@@ -1,34 +1,9 @@
-use crate::common::{Expr, ExprKind, Type, TypeEnv};
+use crate::common::{
+    generate_env_name, generate_id, generate_var_name, Expr, ExprKind, Type, TypeEnv,
+};
 use crate::type_checker::type_check;
 use crate::util::concat_vectors;
 use im_rc::{vector, Vector};
-use std::sync::atomic::{AtomicU64, Ordering};
-
-// "global variable" usage derived from https://stackoverflow.com/a/27826181
-pub static GENSYM_COUNT: AtomicU64 = AtomicU64::new(0);
-
-fn generate_env_name() -> String {
-    let name = format!("env{}", GENSYM_COUNT.load(Ordering::SeqCst));
-    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
-    name
-}
-
-fn generate_var_name() -> String {
-    let name = format!("temp{}", GENSYM_COUNT.load(Ordering::SeqCst));
-    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
-    name
-}
-
-fn generate_id() -> u64 {
-    let val = GENSYM_COUNT.load(Ordering::SeqCst);
-    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
-    val
-}
-
-/// Only use this for testing purposes!
-pub fn dangerously_reset_gensym_count() {
-    GENSYM_COUNT.store(0, Ordering::SeqCst);
-}
 
 #[derive(Clone, Debug)]
 pub struct ClosureConvertError(String);

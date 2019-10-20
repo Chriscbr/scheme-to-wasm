@@ -1,6 +1,40 @@
 use crate::util::format_vector;
 use im_rc::Vector;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// "global variable" usage derived from https://stackoverflow.com/a/27826181
+static GENSYM_COUNT: AtomicU64 = AtomicU64::new(0);
+
+pub fn generate_env_name() -> String {
+    let name = format!("env{}", GENSYM_COUNT.load(Ordering::SeqCst));
+    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
+    name
+}
+
+pub fn generate_var_name() -> String {
+    let name = format!("temp{}", GENSYM_COUNT.load(Ordering::SeqCst));
+    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
+    name
+}
+
+pub fn generate_func_name() -> String {
+    let name = format!("func{}", GENSYM_COUNT.load(Ordering::SeqCst));
+    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
+    name
+}
+
+pub fn generate_id() -> u64 {
+    let val = GENSYM_COUNT.load(Ordering::SeqCst);
+    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
+    val
+}
+
+/// Only use this for testing purposes!
+pub fn dangerously_reset_gensym_count() {
+    GENSYM_COUNT.store(0, Ordering::SeqCst);
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Int,
@@ -80,7 +114,6 @@ impl Expr {
     }
 }
 
-// TODO: Remove all "Box"'s from fields
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprKind {
     Binop(BinOp, Expr, Expr),                   // operator, arg1, arg2
@@ -240,4 +273,9 @@ impl<T: Clone> TypeEnv<T> {
         }
         None
     }
+}
+
+pub struct Prog {
+    pub fns: Vector<(String, Expr)>,
+    pub exp: Expr,
 }

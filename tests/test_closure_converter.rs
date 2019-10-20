@@ -1,7 +1,8 @@
 #[macro_use]
 extern crate lazy_static;
 
-use scheme_to_rust::closure_convert::{closure_convert, dangerously_reset_gensym_count};
+use scheme_to_rust::closure_convert::closure_convert;
+use scheme_to_rust::common::dangerously_reset_gensym_count;
 use scheme_to_rust::parser::parse;
 use scheme_to_rust::type_checker::type_check;
 use std::sync::Mutex;
@@ -218,7 +219,7 @@ fn test_closure_convert_lambda_with_func_param() {
     )
     .unwrap();
     let cc_exp = closure_convert(&exp).unwrap();
-    // type_check(&cc_exp).unwrap();
+    // type_check(&cc_exp).unwrap(); // TODO: fix?
 
     println!("Source: {}", exp);
     println!("Closure converted: {}", cc_exp);
