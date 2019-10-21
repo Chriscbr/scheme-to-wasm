@@ -1,4 +1,5 @@
-use crate::common::{BinOp, Expr, ExprKind, Type};
+use crate::common::{BinOp, Expr, ExprKind};
+use crate::types::Type;
 use im_rc::Vector;
 use std::num::ParseIntError;
 

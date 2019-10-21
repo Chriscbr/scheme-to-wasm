@@ -1,7 +1,6 @@
-use crate::common::{
-    generate_env_name, generate_id, generate_var_name, Expr, ExprKind, Type, TypeEnv,
-};
+use crate::common::{generate_env_name, generate_id, generate_var_name, Expr, ExprKind, TypeEnv};
 use crate::type_checker::type_check;
+use crate::types::Type;
 use crate::util::concat_vectors;
 use im_rc::{vector, Vector};
 

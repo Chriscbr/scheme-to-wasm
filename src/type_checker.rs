@@ -1,4 +1,5 @@
-use crate::common::{type_contains_var, type_var_substitute, BinOp, Expr, ExprKind, Type, TypeEnv};
+use crate::common::{BinOp, Expr, ExprKind, TypeEnv};
+use crate::types::{type_contains_var, type_var_substitute, Type};
 use im_rc::Vector;
 
 #[derive(Clone, Debug)]

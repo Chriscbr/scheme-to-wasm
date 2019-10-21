@@ -1,7 +1,8 @@
 use im_rc::vector;
-use scheme_to_rust::common::{Type, TypeEnv};
+use scheme_to_rust::common::TypeEnv;
 use scheme_to_rust::parser::{parse, parse_type};
 use scheme_to_rust::type_checker::{tc_with_env, type_check};
+use scheme_to_rust::types::Type;
 
 #[test]
 fn test_typecheck_prims() {
