@@ -60,7 +60,8 @@ impl PartialEq for Type {
             (Type::Tuple(vec_a), Type::Tuple(vec_b)) => vec_a == vec_b,
             (Type::Record(vec_a), Type::Record(vec_b)) => vec_a == vec_b,
             (Type::Exists(typ_var_a, base_typ_a), Type::Exists(typ_var_b, base_typ_b)) => {
-                let other_sub = type_substitute(base_typ_b, *typ_var_b, &Type::TypeVar(*typ_var_a));
+                let other_sub =
+                    type_var_substitute(base_typ_b, *typ_var_b, &Type::TypeVar(*typ_var_a));
                 **base_typ_a == other_sub
             }
             (Type::TypeVar(a), Type::TypeVar(b)) => a == b,
@@ -97,28 +98,27 @@ impl std::error::Error for TypeSubstituteError {
     }
 }
 
-// TODO: rename to type_var_substitute
-pub fn type_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Type {
+pub fn type_var_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Type {
     match typ {
         Type::Int => Type::Int,
         Type::Bool => Type::Bool,
         Type::Str => Type::Str,
         Type::List(base_typ) => {
-            let sbase_typ = type_substitute(base_typ, type_var, replace_with);
+            let sbase_typ = type_var_substitute(base_typ, type_var, replace_with);
             Type::List(Box::from(sbase_typ))
         }
         Type::Func(in_typs, ret_typ) => {
             let sin_typs: Vector<Type> = in_typs
                 .iter()
-                .map(|inner_typ| type_substitute(inner_typ, type_var, replace_with))
+                .map(|inner_typ| type_var_substitute(inner_typ, type_var, replace_with))
                 .collect();
-            let sret_typ = type_substitute(ret_typ, type_var, replace_with);
+            let sret_typ = type_var_substitute(ret_typ, type_var, replace_with);
             Type::Func(sin_typs, Box::from(sret_typ))
         }
         Type::Tuple(typs) => {
             let styps: Vector<Type> = typs
                 .iter()
-                .map(|inner_typ| type_substitute(inner_typ, type_var, replace_with))
+                .map(|inner_typ| type_var_substitute(inner_typ, type_var, replace_with))
                 .collect();
             Type::Tuple(styps)
         }
@@ -126,7 +126,7 @@ pub fn type_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Type {
             let sbindings: Vector<(String, Type)> = bindings
                 .iter()
                 .map(|pair| {
-                    let styp = type_substitute(&pair.1, type_var, replace_with);
+                    let styp = type_var_substitute(&pair.1, type_var, replace_with);
                     (pair.0.clone(), styp)
                 })
                 .collect();
@@ -136,11 +136,11 @@ pub fn type_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Type {
             if *base_typ_var == type_var {
                 let new_base_typ_var = type_var + 1;
                 let base_typ_clean =
-                    type_substitute(base_typ, *base_typ_var, &Type::TypeVar(new_base_typ_var));
-                let sbase_typ = type_substitute(&base_typ_clean, type_var, replace_with);
+                    type_var_substitute(base_typ, *base_typ_var, &Type::TypeVar(new_base_typ_var));
+                let sbase_typ = type_var_substitute(&base_typ_clean, type_var, replace_with);
                 Type::Exists(new_base_typ_var, Box::from(sbase_typ))
             } else {
-                let sbase_typ = type_substitute(base_typ, type_var, replace_with);
+                let sbase_typ = type_var_substitute(base_typ, type_var, replace_with);
                 Type::Exists(*base_typ_var, Box::from(sbase_typ))
             }
         }
@@ -234,14 +234,13 @@ pub enum ExprKind {
     Cdr(Expr),
     IsNull(Expr),
     Null(Type),
-    FnApp(Expr, Vector<Expr>), // func, arguments
-    Tuple(Vector<Expr>),       // list of expressions, type annotation
-    TupleGet(Expr, u64),       // env, index - index must explicitly be a number
-    Pack(Expr, Type, Type),    // exp, type substitution, existential type
-    // TODO: change third argument to u64 to enforce that it is abstract type?
-    Unpack(String, Expr, Type, Expr), // new var, package, type var, body
-    Record(Vector<(String, Expr)>),   // map from values to labels
-    RecordGet(Expr, String),          // record, label
+    FnApp(Expr, Vector<Expr>),       // func, arguments
+    Tuple(Vector<Expr>),             // list of expressions, type annotation
+    TupleGet(Expr, u64),             // env, index - index must explicitly be a number
+    Pack(Expr, Type, Type),          // exp, type substitution, existential type
+    Unpack(String, Expr, u64, Expr), // new var, package, type var, body
+    Record(Vector<(String, Expr)>),  // map from values to labels
+    RecordGet(Expr, String),         // record, label
     Id(String),
     Num(i64),
     Bool(bool),

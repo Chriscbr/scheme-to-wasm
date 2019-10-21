@@ -128,7 +128,7 @@ fn ll(exp: &Expr, fns: &mut Vector<(String, Expr)>) -> Result<Expr, LambdaLiftEr
             Ok(Expr::new(ExprKind::Unpack(
                 var.clone(),
                 lpackage,
-                typ_sub.clone(),
+                *typ_sub,
                 lbody,
             )))
         }

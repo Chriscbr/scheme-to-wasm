@@ -1,4 +1,4 @@
-use crate::common::{type_contains_var, type_substitute, BinOp, Expr, ExprKind, Type, TypeEnv};
+use crate::common::{type_contains_var, type_var_substitute, BinOp, Expr, ExprKind, Type, TypeEnv};
 use im_rc::Vector;
 
 #[derive(Clone, Debug)]
@@ -310,7 +310,7 @@ fn tc_pack_with_env(
 ) -> Result<Type, TypeCheckError> {
     if let Type::Exists(type_var, base_typ) = exist {
         // substitute "sub" for all occurrences of type_var (the quantified type) in exist
-        let substituted_typ = type_substitute(base_typ, *type_var, sub);
+        let substituted_typ = type_var_substitute(base_typ, *type_var, sub);
         // now check if the type of "substituted" matches the type of the packed expression
         let packed_typ = tc_with_env(packed_exp, env)?;
         if packed_typ == substituted_typ {
@@ -330,20 +330,10 @@ fn tc_pack_with_env(
 fn tc_unpack_with_env(
     var: &str,
     package: &Expr,
-    typ_var: &Type,
+    typ_var: u64,
     body: &Expr,
     env: &TypeEnv<Type>,
 ) -> Result<Type, TypeCheckError> {
-    // Validate that unpack has a valid type var
-    let typ_var_value = match typ_var {
-        Type::TypeVar(x) => *x,
-        _ => {
-            return Err(TypeCheckError::from(
-                "Unpack expression does not contain valid unpack expression.",
-            ))
-        }
-    };
-
     // Calculate the existential type of the package
     let package_typ = tc_with_env(package, env)?;
 
@@ -363,12 +353,13 @@ fn tc_unpack_with_env(
     }
 
     // Substitute in the unpack type var for the type var in the base type
-    let spackage_base_typ = type_substitute(&package_base_typ, package_typ_var, typ_var);
+    let spackage_base_typ =
+        type_var_substitute(&package_base_typ, package_typ_var, &Type::TypeVar(typ_var));
     let body_typ = tc_with_env(
         body,
         &env.add_binding((String::from(var), spackage_base_typ.clone())),
     )?;
-    if type_contains_var(&body_typ, typ_var_value) {
+    if type_contains_var(&body_typ, typ_var) {
         return Err(TypeCheckError::from(
             "Scoping error: free type variable in type of body expression.",
         ));
@@ -411,7 +402,7 @@ pub fn tc_with_env(value: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeCheckE
         ExprKind::TupleGet(tup, key) => tc_tuple_get_with_env(&tup, *key, env),
         ExprKind::Pack(val, sub, exist) => tc_pack_with_env(&val, &sub, &exist, env),
         ExprKind::Unpack(var, package, typ_sub, body) => {
-            tc_unpack_with_env(&var, &package, &typ_sub, &body, env)
+            tc_unpack_with_env(&var, &package, *typ_sub, &body, env)
         }
         ExprKind::FnApp(func, args) => tc_apply_with_env(&func, &args, env),
     }

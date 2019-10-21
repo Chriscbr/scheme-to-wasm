@@ -175,7 +175,7 @@ fn cc_fn_app(
     let tuple_name = generate_var_name();
     let tuple_name_id = Expr::new(ExprKind::Id(tuple_name.clone()));
     let package = cc(func, env)?;
-    let typ_var = Type::TypeVar(generate_id());
+    let typ_var = generate_id();
     let tuple_func = Expr::new(ExprKind::TupleGet(tuple_name_id.clone(), 0));
     let tuple_env = Expr::new(ExprKind::TupleGet(tuple_name_id, 1));
     let cc_args = args
@@ -298,7 +298,7 @@ fn substitute(
                     Ok(Expr::new(ExprKind::Unpack(
                         var.clone(),
                         spackage,
-                        typ_sub.clone(),
+                        *typ_sub,
                         sbody,
                     )))
                 })
@@ -472,7 +472,7 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
         ExprKind::Unpack(var, package, typ_sub, body) => Ok(Expr::new(ExprKind::Unpack(
             var.clone(),
             cc(&package, env)?,
-            cc_type(&typ_sub)?,
+            *typ_sub,
             cc(&body, env)?,
         ))),
         ExprKind::FnApp(func, args) => cc_fn_app(&func, &args, env),

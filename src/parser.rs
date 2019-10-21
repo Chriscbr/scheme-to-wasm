@@ -447,11 +447,24 @@ fn parse_unpack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
             "First argument in unpack expression has incorrect number of values.",
         ));
     }
-    let var_name: String = String::from(inner_lst[0].as_symbol().ok_or_else(|| {
+    let var_name = String::from(inner_lst[0].as_symbol().ok_or_else(|| {
         "Unpack expression does not contain an identifier to bind the packed expression to."
     })?);
     let package: Expr = parse(&inner_lst[1])?;
-    let typ_var: Type = parse_type(&inner_lst[2])?;
+    let typ_var_symbol = inner_lst[2]
+        .as_symbol()
+        .ok_or_else(|| "Third argument in unpack is not a type variable.")?;
+    let typ_var = match typ_var_symbol.chars().next() {
+        Some('T') => typ_var_symbol[1..typ_var_symbol.len()]
+            .chars()
+            .collect::<String>()
+            .parse::<u64>()?,
+        _ => {
+            return Err(ParseError::from(
+                "Third argument in unpack is not a valid type variable.",
+            ))
+        }
+    };
     let body: Expr = parse(&rest[1])?;
     Ok(Expr::new(ExprKind::Unpack(
         var_name, package, typ_var, body,

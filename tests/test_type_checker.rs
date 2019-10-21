@@ -271,7 +271,7 @@ fn test_typecheck_records_sad() {
     assert_eq!(type_check(&exp).is_err(), true);
 
     // TODO: In practice we shouldn't allow multiple of the same field for a record,
-    // but this isn't high priority to implement.
+    // but this isn't high priority language feature.
 
     // // record contains duplicate values
     // let exp = lexpr::from_str(r#"(make-record (num 3) (num 4))"#).unwrap();
@@ -612,8 +612,6 @@ fn test_typecheck_pack_happy() {
         parse_type(&lexpr::from_str("(exists T0 (record (a : T0) (f : (-> T0 int))))").unwrap())
             .unwrap();
     assert_eq!(type_check(&exp).unwrap(), typ);
-
-    // TODO: example using multiple existentials
 }
 
 #[test]

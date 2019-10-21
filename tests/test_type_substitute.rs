@@ -1,21 +1,24 @@
 use im_rc::vector;
-use scheme_to_rust::common::{type_substitute, Type};
+use scheme_to_rust::common::{type_var_substitute, Type};
 use scheme_to_rust::parser::parse_type;
 
 #[test]
-fn test_type_substitute_idempotent() {
+fn test_type_var_substitute_idempotent() {
     // no substitution (simple)
     let typ = Type::Int;
     let type_var = 0;
     let replace_with = Type::Bool;
-    assert_eq!(type_substitute(&typ, type_var, &replace_with), Type::Int);
+    assert_eq!(
+        type_var_substitute(&typ, type_var, &replace_with),
+        Type::Int
+    );
 
     // no substitution (list)
     let typ = Type::List(Box::from(Type::Int));
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::List(Box::from(Type::Int))
     );
 
@@ -24,7 +27,7 @@ fn test_type_substitute_idempotent() {
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::Func(vector![Type::Str, Type::Bool], Box::from(Type::Str))
     );
 
@@ -33,7 +36,7 @@ fn test_type_substitute_idempotent() {
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::Tuple(vector![Type::Str, Type::Bool, Type::Int])
     );
 
@@ -42,7 +45,7 @@ fn test_type_substitute_idempotent() {
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::Exists(1, Box::from(Type::TypeVar(1))),
     );
 
@@ -51,7 +54,7 @@ fn test_type_substitute_idempotent() {
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::Exists(1, Box::from(Type::TypeVar(1))),
     );
 
@@ -60,25 +63,28 @@ fn test_type_substitute_idempotent() {
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::TypeVar(1),
     );
 }
 
 #[test]
-fn test_type_substitute_happy() {
+fn test_type_var_substitute_happy() {
     // substitution (simple)
     let typ = Type::TypeVar(3);
     let type_var = 3;
     let replace_with = Type::Bool;
-    assert_eq!(type_substitute(&typ, type_var, &replace_with), Type::Bool);
+    assert_eq!(
+        type_var_substitute(&typ, type_var, &replace_with),
+        Type::Bool
+    );
 
     // substitution (list)
     let typ = Type::List(Box::from(Type::TypeVar(3)));
     let type_var = 3;
     let replace_with = Type::Bool;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::List(Box::from(Type::Bool))
     );
 
@@ -90,7 +96,7 @@ fn test_type_substitute_happy() {
     let type_var = 3;
     let replace_with = Type::Int;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::Func(vector![Type::Int, Type::Bool], Box::from(Type::Int))
     );
 
@@ -99,7 +105,7 @@ fn test_type_substitute_happy() {
     let type_var = 3;
     let replace_with = Type::Int;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::Tuple(vector![Type::Int, Type::Bool])
     );
 
@@ -111,7 +117,7 @@ fn test_type_substitute_happy() {
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
-        type_substitute(&typ, type_var, &replace_with),
+        type_var_substitute(&typ, type_var, &replace_with),
         Type::Exists(
             1,
             Box::from(Type::Tuple(vector![Type::Bool, Type::TypeVar(1)]))
