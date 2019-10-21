@@ -58,9 +58,11 @@ fn ll(exp: &Expr, fns: &mut Vector<(String, Expr)>) -> Result<Expr, LambdaLiftEr
             let lbody = ll(&body, fns)?;
             Ok(Expr::new(ExprKind::Let(lbindings, lbody)))
         }
-        ExprKind::Lambda(_params, _ret_type, _body) => {
+        ExprKind::Lambda(params, ret_typ, body) => {
+            let lbody = ll(body, fns)?;
+            let new_lambda = Expr::new(ExprKind::Lambda(params.clone(), ret_typ.clone(), lbody));
             let func_name = generate_func_name();
-            fns.push_back((func_name.clone(), exp.clone()));
+            fns.push_back((func_name.clone(), new_lambda));
             Ok(Expr::new(ExprKind::Id(func_name)))
         }
         ExprKind::FnApp(func, args) => {

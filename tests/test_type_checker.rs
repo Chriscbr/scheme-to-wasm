@@ -474,6 +474,18 @@ fn test_typecheck_nested_lambdas() {
         parse_type(&lexpr::from_str("(-> (-> int int int int) (-> int (-> int int)))").unwrap())
             .unwrap();
     assert_eq!(type_check(&exp).unwrap(), expected);
+
+    let exp = parse(
+        &lexpr::from_str(
+            "(let ((f (lambda ((x : int)) : (-> int int)
+           (lambda ((y : int)) : int (+ x y)))))
+  ((f 4) 3))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let expected = parse_type(&lexpr::from_str("int").unwrap()).unwrap();
+    assert_eq!(type_check(&exp).unwrap(), expected);
 }
 
 #[test]

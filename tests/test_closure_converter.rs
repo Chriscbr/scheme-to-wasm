@@ -219,7 +219,59 @@ fn test_closure_convert_lambda_with_func_param() {
     )
     .unwrap();
     let cc_exp = closure_convert(&exp).unwrap();
-    // type_check(&cc_exp).unwrap(); // TODO: fix?
+    type_check(&cc_exp).unwrap();
+
+    println!("Source: {}", exp);
+    println!("Closure converted: {}", cc_exp);
+    assert_eq!(cc_exp, expected_exp);
+}
+
+#[test]
+fn test_closure_convert_curried_lambda() {
+    let _shared = THE_RESOURCE.lock().unwrap();
+    dangerously_reset_gensym_count();
+
+    let exp = parse(
+        &lexpr::from_str(
+            "(let ((f (lambda ((x : int)) : (-> int int)
+           (lambda ((y : int)) : int (+ x y)))))
+  ((f 4) 3))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let exp_typ = type_check(&exp);
+    assert_eq!(exp_typ.is_err(), false);
+
+    let expected_exp = parse(
+        &lexpr::from_str(
+            r#"(let ((f (pack
+          (make-tuple
+           (lambda ((env2 : (record))
+                    (x : int))
+             : (exists T3 (tuple (-> T3 int int) T3))
+             (pack
+              (make-tuple
+               (lambda ((env0 : (record (x : int)))
+                        (y : int))
+                 : int
+                 (+ (record-ref env0 x) y))
+               (make-record (x x)))
+              (record (x : int))
+              (exists T1 (tuple (-> T1 int int) T1))))
+           (make-record))
+          (record)
+          (exists T5 (tuple (-> T5 int (exists T4 (tuple (-> T4 int int) T4))) T5)))))
+  (unpack (temp6
+           (unpack (temp7 f T8) ((tuple-ref temp7 0) (tuple-ref temp7 1) 4))
+           T9)
+          ((tuple-ref temp6 0) (tuple-ref temp6 1) 3)))"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let cc_exp = closure_convert(&exp).unwrap();
+    type_check(&cc_exp).unwrap();
 
     println!("Source: {}", exp);
     println!("Closure converted: {}", cc_exp);

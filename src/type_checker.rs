@@ -1,4 +1,4 @@
-use crate::common::{type_contains_var, BinOp, Expr, ExprKind, Type, TypeEnv};
+use crate::common::{type_contains_var, type_substitute, BinOp, Expr, ExprKind, Type, TypeEnv};
 use im_rc::Vector;
 
 #[derive(Clone, Debug)]
@@ -302,68 +302,6 @@ fn tc_is_null_with_env(exp: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeChec
     Ok(Type::Bool)
 }
 
-fn type_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Result<Type, TypeCheckError> {
-    match typ {
-        Type::Int => Ok(Type::Int),
-        Type::Bool => Ok(Type::Bool),
-        Type::Str => Ok(Type::Str),
-        Type::List(inner_typ) => type_substitute(inner_typ, type_var, replace_with)
-            .and_then(|styp| Ok(Type::List(Box::from(styp)))),
-        Type::Func(in_typs, ret_typ) => {
-            let in_typs_vec: Result<Vector<Type>, TypeCheckError> = in_typs
-                .iter()
-                .map(|inner_typ| type_substitute(inner_typ, type_var, replace_with))
-                .collect();
-            in_typs_vec.and_then(|sin_typs| {
-                type_substitute(ret_typ, type_var, replace_with)
-                    .and_then(|sret_typ| Ok(Type::Func(sin_typs, Box::from(sret_typ))))
-            })
-        }
-        Type::Tuple(typs) => {
-            let typs_vec: Result<Vector<Type>, TypeCheckError> = typs
-                .iter()
-                .map(|inner_typ| type_substitute(inner_typ, type_var, replace_with))
-                .collect();
-            typs_vec.and_then(|styps| Ok(Type::Tuple(styps)))
-        }
-        Type::Record(bindings) => {
-            let bindings_vec: Result<Vector<(String, Type)>, TypeCheckError> = bindings
-                .iter()
-                .map(|pair| {
-                    type_substitute(&pair.1, type_var, replace_with)
-                        .and_then(|inner_typ| Ok((pair.0.clone(), inner_typ)))
-                })
-                .collect();
-            bindings_vec.and_then(|sbindings| Ok(Type::Record(sbindings)))
-        }
-        Type::Exists(inner_type_var, inner_typ) => {
-            if *inner_type_var == type_var {
-                let new_inner_type_var = type_var + 1;
-                let inner_typ_clean = type_substitute(
-                    inner_typ,
-                    *inner_type_var,
-                    &Type::TypeVar(new_inner_type_var),
-                )?;
-                type_substitute(&inner_typ_clean, type_var, replace_with).and_then(
-                    |sub_inner_typ| Ok(Type::Exists(new_inner_type_var, Box::from(sub_inner_typ))),
-                )
-            } else {
-                type_substitute(inner_typ, type_var, replace_with).and_then(|sub_inner_typ| {
-                    Ok(Type::Exists(*inner_type_var, Box::from(sub_inner_typ)))
-                })
-            }
-        }
-        Type::TypeVar(x) => {
-            if *x == type_var {
-                Ok(replace_with.clone())
-            } else {
-                Ok(Type::TypeVar(*x))
-            }
-        }
-        Type::Unknown => Ok(Type::Unknown),
-    }
-}
-
 fn tc_pack_with_env(
     packed_exp: &Expr,
     sub: &Type,
@@ -372,7 +310,7 @@ fn tc_pack_with_env(
 ) -> Result<Type, TypeCheckError> {
     if let Type::Exists(type_var, base_typ) = exist {
         // substitute "sub" for all occurrences of type_var (the quantified type) in exist
-        let substituted_typ = type_substitute(base_typ, *type_var, sub)?;
+        let substituted_typ = type_substitute(base_typ, *type_var, sub);
         // now check if the type of "substituted" matches the type of the packed expression
         let packed_typ = tc_with_env(packed_exp, env)?;
         if packed_typ == substituted_typ {
@@ -425,7 +363,7 @@ fn tc_unpack_with_env(
     }
 
     // Substitute in the unpack type var for the type var in the base type
-    let spackage_base_typ = type_substitute(&package_base_typ, package_typ_var, typ_var)?;
+    let spackage_base_typ = type_substitute(&package_base_typ, package_typ_var, typ_var);
     let body_typ = tc_with_env(
         body,
         &env.add_binding((String::from(var), spackage_base_typ.clone())),
@@ -481,135 +419,4 @@ pub fn tc_with_env(value: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeCheckE
 
 pub fn type_check(value: &Expr) -> Result<Type, TypeCheckError> {
     tc_with_env(value, &TypeEnv::new())
-}
-
-// Only test private helper functions here;
-// public API tests can go in tests/test_type_checker.rs
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use im_rc::vector;
-
-    #[test]
-    fn test_type_substitute_idempotent() {
-        // no substitution (simple)
-        let typ = Type::Int;
-        let type_var = 0;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::Int
-        );
-
-        // no substitution (list)
-        let typ = Type::List(Box::from(Type::Int));
-        let type_var = 0;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::List(Box::from(Type::Int))
-        );
-
-        // no substitution (function)
-        let typ = Type::Func(vector![Type::Str, Type::Bool], Box::from(Type::Str));
-        let type_var = 0;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::Func(vector![Type::Str, Type::Bool], Box::from(Type::Str))
-        );
-
-        // no substitution (tuple)
-        let typ = Type::Tuple(vector![Type::Str, Type::Bool, Type::Int]);
-        let type_var = 0;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::Tuple(vector![Type::Str, Type::Bool, Type::Int])
-        );
-
-        // no substitution (existential, different bound type)
-        let typ = Type::Exists(1, Box::from(Type::TypeVar(1)));
-        let type_var = 0;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::Exists(1, Box::from(Type::TypeVar(1))),
-        );
-
-        // no substitution (existential, same bound type - inner typevar should get renamed)
-        let typ = Type::Exists(0, Box::from(Type::TypeVar(0)));
-        let type_var = 0;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::Exists(1, Box::from(Type::TypeVar(1))),
-        );
-
-        // no substitution (different type var)
-        let typ = Type::TypeVar(1);
-        let type_var = 0;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::TypeVar(1),
-        );
-    }
-
-    #[test]
-    fn test_type_substitute_happy() {
-        // substitution (simple)
-        let typ = Type::TypeVar(3);
-        let type_var = 3;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::Bool
-        );
-
-        // substitution (list)
-        let typ = Type::List(Box::from(Type::TypeVar(3)));
-        let type_var = 3;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::List(Box::from(Type::Bool))
-        );
-
-        // substitution (function)
-        let typ = Type::Func(
-            vector![Type::TypeVar(3), Type::Bool],
-            Box::from(Type::TypeVar(3)),
-        );
-        let type_var = 3;
-        let replace_with = Type::Int;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::Func(vector![Type::Int, Type::Bool], Box::from(Type::Int))
-        );
-
-        // substitution (tuple)
-        let typ = Type::Tuple(vector![Type::TypeVar(3), Type::Bool]);
-        let type_var = 3;
-        let replace_with = Type::Int;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::Tuple(vector![Type::Int, Type::Bool])
-        );
-
-        // substitution (existential)
-        let typ = Type::Exists(
-            1,
-            Box::from(Type::Tuple(vector![Type::TypeVar(0), Type::TypeVar(1)])),
-        );
-        let type_var = 0;
-        let replace_with = Type::Bool;
-        assert_eq!(
-            type_substitute(&typ, type_var, &replace_with).unwrap(),
-            Type::Exists(
-                1,
-                Box::from(Type::Tuple(vector![Type::Bool, Type::TypeVar(1)]))
-            ),
-        );
-    }
 }
