@@ -5,7 +5,7 @@ use im_rc::vector;
 use scheme_to_rust::closure_convert::closure_convert;
 use scheme_to_rust::common::{dangerously_reset_gensym_count, Prog};
 use scheme_to_rust::lambda_lift::lambda_lift;
-use scheme_to_rust::parser::parse;
+use scheme_to_rust::parse::parse;
 use std::sync::Mutex;
 
 lazy_static! {

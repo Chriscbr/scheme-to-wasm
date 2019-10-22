@@ -1,5 +1,5 @@
 use im_rc::vector;
-use scheme_to_rust::parser::parse_type;
+use scheme_to_rust::parse::parse_type;
 use scheme_to_rust::types::Type;
 
 #[test]

@@ -3,8 +3,8 @@ extern crate lazy_static;
 
 use scheme_to_rust::closure_convert::closure_convert;
 use scheme_to_rust::common::dangerously_reset_gensym_count;
-use scheme_to_rust::parser::parse;
-use scheme_to_rust::type_checker::type_check;
+use scheme_to_rust::parse::parse;
+use scheme_to_rust::type_check::type_check;
 use std::sync::Mutex;
 
 lazy_static! {
