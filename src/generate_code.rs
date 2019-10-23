@@ -49,7 +49,7 @@ pub fn generate_code(prog: &Prog) -> Result<TokenStream, GenerateCodeError> {
         ExprKind::Id(val) => unimplemented!(),
         ExprKind::Num(val) => Ok({
             quote! {
-                h.alloc(#val)
+                h.alloc(Val::Int(#val))
             }
         }),
         ExprKind::Bool(val) => unimplemented!(),
