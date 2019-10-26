@@ -216,3 +216,17 @@ pub struct Prog {
     pub fns: Vector<(String, Expr)>,
     pub exp: Expr,
 }
+
+impl std::fmt::Display for Prog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut fns_str = String::new();
+        if !self.fns.is_empty() {
+            for pair in self.fns.iter() {
+                fns_str.push_str(format!("{}: {}, ", pair.0, pair.1).as_str())
+            }
+            fns_str.pop();
+            fns_str.pop();
+        }
+        write!(f, "Prog(fns: ({}), exp: {})", fns_str, self.exp)
+    }
+}

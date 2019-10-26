@@ -3,6 +3,7 @@ use scheme_to_rust::closure_convert::closure_convert;
 use scheme_to_rust::common::{dangerously_reset_gensym_count, Prog};
 use scheme_to_rust::lambda_lift::lambda_lift;
 use scheme_to_rust::parse::parse;
+use scheme_to_rust::type_check::{type_check, type_check_prog};
 use serial_test_derive::serial;
 
 #[test]
@@ -54,6 +55,7 @@ fn test_lambda_lift_simple_happy() {
     let prog = lambda_lift(&exp).unwrap();
     assert_eq!(prog.fns, expected_prog.fns);
     assert_eq!(prog.exp, expected_prog.exp);
+    assert_eq!(type_check_prog(&prog).is_err(), false);
 }
 
 #[test]
@@ -89,4 +91,41 @@ fn test_lambda_lift_nested_lambdas_happy() {
     let prog = lambda_lift(&cc_exp).unwrap();
     assert_eq!(prog.fns.len(), 2);
     assert_eq!(prog.exp, expected_exp);
+    assert_eq!(type_check_prog(&prog).is_err(), false);
+}
+
+#[test]
+#[serial]
+fn test_typecheck_prog_happy() {
+    let exp = parse(
+        &lexpr::from_str(
+            r#"(let ((f (lambda ((x : int)) : (-> int int)
+           (lambda ((y : int)) : int (+ x y)))))
+  ((f 4) 3))"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let cc_exp = closure_convert(&exp).unwrap();
+    assert_eq!(type_check(&cc_exp).is_err(), false);
+    let prog = lambda_lift(&cc_exp).unwrap();
+    assert_eq!(type_check_prog(&prog).is_err(), false);
+}
+
+#[test]
+#[serial]
+fn test_typecheck_prog_sad() {
+    // the expression is not closure converted, so
+    // the lambda lifted expression should not be valid.
+    let exp = parse(
+        &lexpr::from_str(
+            r#"(let ((f (lambda ((x : int)) : (-> int int)
+           (lambda ((y : int)) : int (+ x y)))))
+  ((f 4) 3))"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let prog = lambda_lift(&exp).unwrap();
+    assert_eq!(type_check_prog(&prog).is_err(), true);
 }

@@ -1,4 +1,4 @@
-use crate::common::{BinOp, Expr, ExprKind, TypeEnv};
+use crate::common::{BinOp, Expr, ExprKind, Prog, TypeEnv};
 use crate::types::{type_contains_var, type_var_substitute, Type};
 use im_rc::Vector;
 
@@ -382,7 +382,10 @@ pub fn tc_with_env(value: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeCheckE
         ExprKind::Str(_) => Ok(Type::Str),
         ExprKind::Id(sym) => match env.find(sym.as_str()) {
             Some(val) => Ok(val.clone()),
-            None => Err(TypeCheckError::from("Not a recognized function name.")),
+            None => Err(TypeCheckError(format!(
+                "Not a recognized function name: {}.",
+                sym
+            ))),
         },
         ExprKind::Binop(op, arg1, arg2) => tc_binop_with_env(*op, &arg1, &arg2, env),
         ExprKind::If(pred, cons, alt) => tc_if_with_env(&pred, &cons, &alt, env),
@@ -411,4 +414,13 @@ pub fn tc_with_env(value: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeCheckE
 
 pub fn type_check(value: &Expr) -> Result<Type, TypeCheckError> {
     tc_with_env(value, &TypeEnv::new())
+}
+
+pub fn type_check_prog(prog: &Prog) -> Result<Type, TypeCheckError> {
+    let mut env = TypeEnv::new();
+    for def in prog.fns.iter() {
+        let typ = tc_with_env(&def.1, &env)?;
+        env = env.add_binding((def.0.clone(), typ));
+    }
+    tc_with_env(&prog.exp, &env)
 }
