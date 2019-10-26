@@ -83,8 +83,6 @@ fn main() {
 
 // TODO: fix so this test cleans itself up if it fails
 // (probably requires finding some crate to do this?)
-// TODO: get tests to run sequentially using crates
-// instead of mutex hacks
 fn run_code(input: TokenStream) -> String {
     let data = boilerplate.replace("<EXP>", format!("{}", input).as_str());
     let curr_dir = env::current_dir().expect("Could not get current directory.");

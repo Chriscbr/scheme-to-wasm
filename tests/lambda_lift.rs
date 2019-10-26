@@ -1,20 +1,13 @@
-#[macro_use]
-extern crate lazy_static;
-
 use im_rc::vector;
 use scheme_to_rust::closure_convert::closure_convert;
 use scheme_to_rust::common::{dangerously_reset_gensym_count, Prog};
 use scheme_to_rust::lambda_lift::lambda_lift;
 use scheme_to_rust::parse::parse;
-use std::sync::Mutex;
-
-lazy_static! {
-    static ref THE_RESOURCE: Mutex<()> = Mutex::new(());
-}
+use serial_test_derive::serial;
 
 #[test]
+#[serial]
 fn test_lambda_lift_simple_happy() {
-    let _shared = THE_RESOURCE.lock().unwrap();
     dangerously_reset_gensym_count();
 
     let exp = parse(
@@ -64,8 +57,8 @@ fn test_lambda_lift_simple_happy() {
 }
 
 #[test]
+#[serial]
 fn test_lambda_lift_nested_lambdas_happy() {
-    let _shared = THE_RESOURCE.lock().unwrap();
     dangerously_reset_gensym_count();
 
     let exp = parse(

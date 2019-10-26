@@ -1,19 +1,12 @@
-#[macro_use]
-extern crate lazy_static;
-
 use scheme_to_rust::closure_convert::closure_convert;
 use scheme_to_rust::common::dangerously_reset_gensym_count;
 use scheme_to_rust::parse::parse;
 use scheme_to_rust::type_check::type_check;
-use std::sync::Mutex;
-
-lazy_static! {
-    static ref THE_RESOURCE: Mutex<()> = Mutex::new(());
-}
+use serial_test_derive::serial;
 
 #[test]
+#[serial]
 fn test_closure_convert_lambda_no_free_vars() {
-    let _shared = THE_RESOURCE.lock().unwrap();
     dangerously_reset_gensym_count();
 
     let exp = parse(&lexpr::from_str("(lambda ((x : int)) : int (+ x 3))").unwrap()).unwrap();
@@ -42,8 +35,8 @@ fn test_closure_convert_lambda_no_free_vars() {
 }
 
 #[test]
+#[serial]
 fn test_closure_convert_apply_lambda_no_free_vars() {
-    let _shared = THE_RESOURCE.lock().unwrap();
     dangerously_reset_gensym_count();
 
     let exp = parse(&lexpr::from_str("((lambda ((x : int)) : int (+ x 3)) 5)").unwrap()).unwrap();
@@ -74,8 +67,8 @@ fn test_closure_convert_apply_lambda_no_free_vars() {
 }
 
 #[test]
+#[serial]
 fn test_closure_convert_lambda_yes_free_vars() {
-    let _shared = THE_RESOURCE.lock().unwrap();
     dangerously_reset_gensym_count();
 
     let exp = parse(&lexpr::from_str("(let ((y 3)) (lambda ((x : int)) : int (+ x y)))").unwrap())
@@ -106,8 +99,8 @@ fn test_closure_convert_lambda_yes_free_vars() {
 }
 
 #[test]
+#[serial]
 fn test_closure_convert_apply_lambda_yes_free_vars() {
-    let _shared = THE_RESOURCE.lock().unwrap();
     dangerously_reset_gensym_count();
 
     let exp =
@@ -144,8 +137,8 @@ fn test_closure_convert_apply_lambda_yes_free_vars() {
 }
 
 #[test]
+#[serial]
 fn test_closure_convert_lambda_by_name() {
-    let _shared = THE_RESOURCE.lock().unwrap();
     dangerously_reset_gensym_count();
 
     let exp =
@@ -177,8 +170,8 @@ fn test_closure_convert_lambda_by_name() {
 }
 
 #[test]
+#[serial]
 fn test_closure_convert_lambda_with_func_param() {
-    let _shared = THE_RESOURCE.lock().unwrap();
     dangerously_reset_gensym_count();
 
     let exp = parse(
@@ -227,8 +220,8 @@ fn test_closure_convert_lambda_with_func_param() {
 }
 
 #[test]
+#[serial]
 fn test_closure_convert_curried_lambda() {
-    let _shared = THE_RESOURCE.lock().unwrap();
     dangerously_reset_gensym_count();
 
     let exp = parse(
