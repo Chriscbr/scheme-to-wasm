@@ -1,6 +1,8 @@
 use scheme_to_rust::compile::compile;
+use serial_test_derive::serial;
 use std::{env, fs, process::Command};
 
+/// Helper function for testing compiled code.
 fn run_code(input: String) -> String {
     let curr_dir = env::current_dir().expect("Could not get current directory.");
     let tmp_dir = curr_dir.join("tests").join("tmp");
@@ -34,15 +36,51 @@ fn run_code(input: String) -> String {
         .output()
         .expect("Failed to compile rust code.");
     fs::remove_dir_all(tmp_dir.clone()).expect("Unable to clean up tmp directory.");
-    String::from_utf8(output.stdout).expect("Unable to read output.")
+    let mut result = String::from_utf8(output.stdout).expect("Unable to read output.");
+    result.pop();
+    result
 }
 
 #[test]
-fn test_compile_happy() {
+#[serial]
+fn test_compile_primitives() {
     let exp = lexpr::from_str("3").unwrap();
     let code = compile(exp);
     println!("{}", code);
-    let mut result = run_code(code);
-    result.pop(); // remove newline from program output
+    let result = run_code(code);
     assert_eq!(result, String::from("3"));
+
+    let exp = lexpr::from_str("true").unwrap();
+    let code = compile(exp);
+    println!("{}", code);
+    let result = run_code(code);
+    assert_eq!(result, String::from("true"));
+
+    let exp = lexpr::from_str("\"foo\"").unwrap();
+    let code = compile(exp);
+    println!("{}", code);
+    let result = run_code(code);
+    assert_eq!(result, String::from("\"foo\""));
+}
+
+#[test]
+#[serial]
+fn test_compile_binops() {
+    let exp = lexpr::from_str("(+ (/ 8 2) (* (- 4 2) 3))").unwrap();
+    let code = compile(exp);
+    println!("{}", code);
+    let result = run_code(code);
+    assert_eq!(result, String::from("10"));
+
+    let exp = lexpr::from_str(r#"(concat "foo" "bar")"#).unwrap();
+    let code = compile(exp);
+    println!("{}", code);
+    let result = run_code(code);
+    assert_eq!(result, String::from("\"foobar\""));
+
+    let exp = lexpr::from_str("(and (or false true) true)").unwrap();
+    let code = compile(exp);
+    println!("{}", code);
+    let result = run_code(code);
+    assert_eq!(result, String::from("true"));
 }

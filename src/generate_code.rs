@@ -1,4 +1,4 @@
-use crate::common::{ExprKind, Prog};
+use crate::common::{BinOp, Expr, ExprKind, Prog};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -26,9 +26,26 @@ impl std::error::Error for GenerateCodeError {
     }
 }
 
-pub fn generate_code(prog: &Prog) -> Result<TokenStream, GenerateCodeError> {
-    match &*prog.exp.kind {
-        ExprKind::Binop(op, exp1, exp2) => unimplemented!(),
+pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
+    match &*exp.kind {
+        ExprKind::Binop(op, exp1, exp2) => Ok({
+            let code1 = generate_code_exp(exp1)?;
+            let code2 = generate_code_exp(exp2)?;
+            match op {
+                BinOp::Add => quote! { add_int(#code1, #code2, h) },
+                BinOp::Subtract => quote! { sub_int(#code1, #code2, h) },
+                BinOp::Multiply => quote! { mul_int(#code1, #code2, h) },
+                BinOp::Divide => quote! { div_int(#code1, #code2, h) },
+                BinOp::LessThan => quote! { lt_int(#code1, #code2, h) },
+                BinOp::GreaterThan => quote! { gt_int(#code1, #code2, h) },
+                BinOp::LessOrEqual => quote! { leq_int(#code1, #code2, h) },
+                BinOp::GreaterOrEqual => quote! { geq_int(#code1, #code2, h) },
+                BinOp::EqualTo => quote! { eq_int(#code1, #code2, h) },
+                BinOp::And => quote! { and_bool(#code1, #code2, h) },
+                BinOp::Or => quote! { or_bool(#code1, #code2, h) },
+                BinOp::Concat => quote! { concat_str(#code1, #code2, h) },
+            }
+        }),
         ExprKind::If(pred, cons, alt) => unimplemented!(),
         ExprKind::Let(bindings, body) => unimplemented!(),
         ExprKind::Lambda(params, ret_type, body) => unimplemented!(),
@@ -52,7 +69,20 @@ pub fn generate_code(prog: &Prog) -> Result<TokenStream, GenerateCodeError> {
                 h.alloc(Val::Int(#val))
             }
         }),
-        ExprKind::Bool(val) => unimplemented!(),
-        ExprKind::Str(val) => unimplemented!(),
+        ExprKind::Bool(val) => Ok({
+            quote! {
+                h.alloc(Val::Bool(#val))
+            }
+        }),
+        ExprKind::Str(val) => Ok({
+            quote! {
+                h.alloc(Val::Str(String::from(#val)))
+            }
+        }),
     }
+}
+
+// TODO: use prog.fns
+pub fn generate_code_prog(prog: &Prog) -> Result<TokenStream, GenerateCodeError> {
+    generate_code_exp(&prog.exp)
 }
