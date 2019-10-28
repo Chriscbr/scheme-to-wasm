@@ -1,3 +1,6 @@
 /target
 **/*.rs.bk
 Cargo.lock
+
+/boilerplate/target
+/boilerplate/Cargo.lock
