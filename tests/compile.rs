@@ -45,20 +45,17 @@ fn run_code(input: String) -> String {
 #[serial]
 fn test_compile_primitives() {
     let exp = lexpr::from_str("3").unwrap();
-    let code = compile(exp);
-    println!("{}", code);
+    let code = compile(exp).unwrap();
     let result = run_code(code);
     assert_eq!(result, String::from("3"));
 
     let exp = lexpr::from_str("true").unwrap();
-    let code = compile(exp);
-    println!("{}", code);
+    let code = compile(exp).unwrap();
     let result = run_code(code);
     assert_eq!(result, String::from("true"));
 
     let exp = lexpr::from_str("\"foo\"").unwrap();
-    let code = compile(exp);
-    println!("{}", code);
+    let code = compile(exp).unwrap();
     let result = run_code(code);
     assert_eq!(result, String::from("\"foo\""));
 }
@@ -67,20 +64,17 @@ fn test_compile_primitives() {
 #[serial]
 fn test_compile_binops() {
     let exp = lexpr::from_str("(+ (/ 8 2) (* (- 4 2) 3))").unwrap();
-    let code = compile(exp);
-    println!("{}", code);
+    let code = compile(exp).unwrap();
     let result = run_code(code);
     assert_eq!(result, String::from("10"));
 
     let exp = lexpr::from_str(r#"(concat "foo" "bar")"#).unwrap();
-    let code = compile(exp);
-    println!("{}", code);
+    let code = compile(exp).unwrap();
     let result = run_code(code);
     assert_eq!(result, String::from("\"foobar\""));
 
     let exp = lexpr::from_str("(and (or false true) true)").unwrap();
-    let code = compile(exp);
-    println!("{}", code);
+    let code = compile(exp).unwrap();
     let result = run_code(code);
     assert_eq!(result, String::from("true"));
 }

@@ -4,6 +4,9 @@ use im_rc::{vector, Vector};
 #[derive(Clone, Debug)]
 pub struct LambdaLiftError(String);
 
+// Allows other errors to wrap this one
+impl std::error::Error for LambdaLiftError {}
+
 impl From<&str> for LambdaLiftError {
     fn from(message: &str) -> Self {
         LambdaLiftError(String::from(message))
@@ -13,15 +16,6 @@ impl From<&str> for LambdaLiftError {
 impl std::fmt::Display for LambdaLiftError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "LambdaLiftError: {}", self.0)
-    }
-}
-
-// allows other errors to wrap this one
-// see https://doc.rust-lang.org/rust-by-example/error/multiple_error_types/define_error_type.html
-impl std::error::Error for LambdaLiftError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // Generic error, underlying cause isn't tracked.
-        None
     }
 }
 

@@ -7,6 +7,9 @@ use im_rc::{vector, Vector};
 #[derive(Clone, Debug)]
 pub struct ClosureConvertError(String);
 
+// Allows other errors to wrap this one
+impl std::error::Error for ClosureConvertError {}
+
 impl From<&str> for ClosureConvertError {
     fn from(message: &str) -> Self {
         ClosureConvertError(String::from(message))
@@ -16,15 +19,6 @@ impl From<&str> for ClosureConvertError {
 impl std::fmt::Display for ClosureConvertError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "ClosureConvertError: {}", self.0)
-    }
-}
-
-// allows other errors to wrap this one
-// see https://doc.rust-lang.org/rust-by-example/error/multiple_error_types/define_error_type.html
-impl std::error::Error for ClosureConvertError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // Generic error, underlying cause isn't tracked.
-        None
     }
 }
 

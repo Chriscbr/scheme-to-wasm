@@ -43,6 +43,9 @@ impl PartialEq for Type {
 #[derive(Clone, Debug)]
 pub struct TypeSubstituteError(String);
 
+// Allows other errors to wrap this one
+impl std::error::Error for TypeSubstituteError {}
+
 impl From<&str> for TypeSubstituteError {
     fn from(message: &str) -> Self {
         TypeSubstituteError(String::from(message))
@@ -52,15 +55,6 @@ impl From<&str> for TypeSubstituteError {
 impl std::fmt::Display for TypeSubstituteError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "TypeSubstituteError: {}", self.0)
-    }
-}
-
-// allows other errors to wrap this one
-// see https://doc.rust-lang.org/rust-by-example/error/multiple_error_types/define_error_type.html
-impl std::error::Error for TypeSubstituteError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // Generic error, underlying cause isn't tracked.
-        None
     }
 }
 
