@@ -30,25 +30,36 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
                 BinOp::Subtract => quote! { (#code1 - #code2) },
                 BinOp::Multiply => quote! { (#code1 * #code2) },
                 BinOp::Divide => quote! { (#code1 / #code2) },
-                BinOp::LessThan => quote! { (#code1 < #code2) },
-                BinOp::GreaterThan => quote! { (#code1 > #code2) },
-                BinOp::LessOrEqual => quote! { (#code1 <= #code2) },
-                BinOp::GreaterOrEqual => quote! { (#code1 >= #code2) },
-                BinOp::EqualTo => quote! { (#code1 == #code2) },
+                BinOp::LessThan => quote! { BoolVal::from(#code1 < #code2) },
+                BinOp::GreaterThan => quote! { BoolVal::from(#code1 > #code2) },
+                BinOp::LessOrEqual => quote! { BoolVal::from(#code1 <= #code2) },
+                BinOp::GreaterOrEqual => quote! { BoolVal::from(#code1 >= #code2) },
+                BinOp::EqualTo => quote! { BoolVal::from(#code1 == #code2) },
 
                 // && and || cannot be operator overloaded in Rust
                 // so a special form, i.e. some native Rust syntax with short
                 // circuiting behavior needs to be used
                 BinOp::And => quote! {
-                    { if (#code1.get_value()) { #code2 } else { BoolVal::from(false) } }
+                    { if { #code1.get_value() } { #code2 } else { BoolVal::from(false) } }
                 },
                 BinOp::Or => quote! {
-                    { if (#code1.get_value()) { BoolVal::from(true) } else { #code2 } }
+                    { if { #code1.get_value() } { BoolVal::from(true) } else { #code2 } }
                 },
                 BinOp::Concat => quote! { concat(#code1, #code2) },
             }
         }),
-        ExprKind::If(pred, cons, alt) => unimplemented!(),
+        ExprKind::If(pred, cons, alt) => Ok({
+            let pred_code = generate_code_exp(pred)?;
+            let cons_code = generate_code_exp(cons)?;
+            let alt_code = generate_code_exp(alt)?;
+            quote! { {
+                if { #pred_code.get_value() } {
+                    #cons_code
+                } else {
+                    #alt_code
+                }
+            } }
+        }),
         ExprKind::Let(bindings, body) => unimplemented!(),
         ExprKind::Lambda(params, ret_type, body) => unimplemented!(),
         ExprKind::FnApp(func, args) => unimplemented!(),
