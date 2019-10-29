@@ -5,175 +5,22 @@ use crate::parse::parse;
 use crate::type_check::{type_check, type_check_prog};
 
 static BOILERPLATE: &str = r#"
-
-#[derive(Clone)]
-pub enum Val {
-    Int(i64),
-    Bool(bool),
-    Str(String),
-}
-
-impl std::fmt::Display for Val {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Val::Int(x) => write!(f, "{}", *x),
-            Val::Bool(x) => write!(f, "{}", *x),
-            Val::Str(x) => write!(f, "\"{}\"", *x),
-        }
-    }
-}
-
-impl Val {
-    pub fn stringify(&self, heap: &Heap) -> String {
-        match self {
-            Val::Int(x) => format!("{}", *x),
-            Val::Bool(x) => format!("{}", *x),
-            Val::Str(x) => format!("\"{}\"", *x),
-        }
-    }
-
-    pub fn unwrap_int(&self) -> i64 {
-        match self {
-            Val::Int(x) => *x,
-            _ => panic!("called `Val::unwrap_int` on something besides Val::Int")
-        }
-    }
-
-    pub fn unwrap_bool(&self) -> bool {
-        match self {
-            Val::Bool(x) => *x,
-            _ => panic!("called `Val::unwrap_bool` on something besides Val::Bool")
-        }
-    }
-
-    pub fn unwrap_str(&self) -> String {
-        match self {
-            Val::Str(x) => x.clone(), // not sure if this is a hack or is necessary
-            _ => panic!("called `Val::unwrap_str` on something besides Val::Str")
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct Heap {
-    mem: Vec<Val>
-}
-
-impl From<Vec<Val>> for Heap {
-    fn from(mem: Vec<Val>) -> Self {
-        Heap { mem: mem }
-    }
-}
-
-impl Heap {
-    pub fn new() -> Self {
-        Heap { mem: vec![] }
-    }
-
-    pub fn alloc(&mut self, v: Val) -> usize {
-        self.mem.push(v);
-        self.mem.len() - 1
-    }
-
-    pub fn get(&self, i: usize) -> &Val {
-        &self.mem[i]
-    }
-
-    pub fn set(&mut self, i: usize, v: Val) {
-        self.mem[i] = v;
-    }
-
-    pub fn copy(&mut self, into: usize, from: usize) {
-        self.mem[into] = self.mem[from].clone();
-    }
-
-    pub fn next_alloc_addr(&self) -> usize {
-        self.mem.len()
-    }
-}
-
-pub fn and_bool(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_bool();
-    let b_val = heap.get(b).unwrap_bool();
-    heap.alloc(Val::Bool(a_val && b_val))
-}
-
-pub fn or_bool(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_bool();
-    let b_val = heap.get(b).unwrap_bool();
-    heap.alloc(Val::Bool(a_val || b_val))
-}
-
-pub fn add_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_int();
-    let b_val = heap.get(b).unwrap_int();
-    heap.alloc(Val::Int(a_val + b_val))
-}
-
-pub fn sub_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_int();
-    let b_val = heap.get(b).unwrap_int();
-    heap.alloc(Val::Int(a_val - b_val))
-}
-
-pub fn mul_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_int();
-    let b_val = heap.get(b).unwrap_int();
-    heap.alloc(Val::Int(a_val * b_val))
-}
-
-pub fn div_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_int();
-    let b_val = heap.get(b).unwrap_int();
-    heap.alloc(Val::Int(a_val / b_val))
-}
-
-pub fn gt_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_int();
-    let b_val = heap.get(b).unwrap_int();
-    heap.alloc(Val::Bool(a_val > b_val))
-}
-
-pub fn lt_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_int();
-    let b_val = heap.get(b).unwrap_int();
-    heap.alloc(Val::Bool(a_val < b_val))
-}
-
-pub fn eq_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_int();
-    let b_val = heap.get(b).unwrap_int();
-    heap.alloc(Val::Bool(a_val == b_val))
-}
-
-pub fn geq_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_int();
-    let b_val = heap.get(b).unwrap_int();
-    heap.alloc(Val::Bool(a_val >= b_val))
-}
-
-pub fn leq_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_int();
-    let b_val = heap.get(b).unwrap_int();
-    heap.alloc(Val::Bool(a_val <= b_val))
-}
-
-pub fn concat_str(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).unwrap_str();
-    let b_val = heap.get(b).unwrap_str();
-    heap.alloc(Val::Str(format!("{}{}", a_val, b_val)))
-}
-
-fn run(h: &mut Heap) -> usize {
+fn run(h: &mut Heap) -> impl HeapVal {
     <EXP>
 }
 
 fn main() {
     let mut h = Heap::new();
     let result = run(&mut h);
-    println!("{}", h.get(result).stringify(&h));
+    println!("{}", result);
 }
 "#;
+
+fn get_library_code() -> String {
+    let curr_dir = std::env::current_dir().expect("Could not get current directory.");
+    let lib_path = curr_dir.join("boilerplate").join("src").join("lib.rs");
+    std::fs::read_to_string(lib_path).expect("Unable to find library code.")
+}
 
 // TODO: rework to produce some kind of fallback if any step fails,
 // e.g. as done in
@@ -186,5 +33,7 @@ pub fn compile(input: lexpr::Value) -> String {
     let prog = lambda_lift(&cc_exp).unwrap();
     type_check_prog(&prog).unwrap();
     let code = generate_code_prog(&prog).unwrap();
-    BOILERPLATE.replace("<EXP>", format!("{}", code).as_str())
+    let lib_code = get_library_code();
+    let main_code = BOILERPLATE.replace("<EXP>", format!("{}", code).as_str());
+    format!("{}\n{}", lib_code, main_code)
 }

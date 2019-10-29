@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::cmp;
 use std::fmt::Display;
 use std::ops;
 
@@ -71,7 +72,7 @@ impl<T: Display + Clone + 'static> HeapVal for T {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub struct IntVal {
     value: i64,
 }
@@ -94,11 +95,53 @@ impl Display for IntVal {
     }
 }
 
+impl Ord for IntVal {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.value.cmp(&other.get_value())
+    }
+}
+
+impl PartialOrd for IntVal {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for IntVal {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.get_value()
+    }
+}
+
 impl ops::Add<IntVal> for IntVal {
     type Output = IntVal;
 
     fn add(self, rhs: IntVal) -> IntVal {
         IntVal::from(self.value + rhs.get_value())
+    }
+}
+
+impl ops::Sub<IntVal> for IntVal {
+    type Output = IntVal;
+
+    fn sub(self, rhs: IntVal) -> IntVal {
+        IntVal::from(self.value - rhs.get_value())
+    }
+}
+
+impl ops::Mul<IntVal> for IntVal {
+    type Output = IntVal;
+
+    fn mul(self, rhs: IntVal) -> IntVal {
+        IntVal::from(self.value * rhs.get_value())
+    }
+}
+
+impl ops::Div<IntVal> for IntVal {
+    type Output = IntVal;
+
+    fn div(self, rhs: IntVal) -> IntVal {
+        IntVal::from(self.value / rhs.get_value())
     }
 }
 
@@ -138,7 +181,7 @@ impl StrVal {
 
 impl Display for StrVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "\"{}\"", self.value)
     }
 }
 
@@ -196,74 +239,8 @@ impl Heap {
     }
 }
 
-pub fn and_bool(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_bool().get_value();
-    let b_val = heap.get(b).as_bool().get_value();
-    heap.alloc(Box::from(BoolVal::from(a_val && b_val)))
-}
-
-pub fn or_bool(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_bool().get_value();
-    let b_val = heap.get(b).as_bool().get_value();
-    heap.alloc(Box::from(BoolVal::from(a_val || b_val)))
-}
-
-pub fn add_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_int().get_value();
-    let b_val = heap.get(b).as_int().get_value();
-    heap.alloc(Box::from(IntVal::from(a_val + b_val)))
-}
-
-pub fn sub_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_int().get_value();
-    let b_val = heap.get(b).as_int().get_value();
-    heap.alloc(Box::from(IntVal::from(a_val - b_val)))
-}
-
-pub fn mul_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_int().get_value();
-    let b_val = heap.get(b).as_int().get_value();
-    heap.alloc(Box::from(IntVal::from(a_val * b_val)))
-}
-
-pub fn div_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_int().get_value();
-    let b_val = heap.get(b).as_int().get_value();
-    heap.alloc(Box::from(IntVal::from(a_val / b_val)))
-}
-
-pub fn gt_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_int().get_value();
-    let b_val = heap.get(b).as_int().get_value();
-    heap.alloc(Box::from(BoolVal::from(a_val > b_val)))
-}
-
-pub fn lt_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_int().get_value();
-    let b_val = heap.get(b).as_int().get_value();
-    heap.alloc(Box::from(BoolVal::from(a_val < b_val)))
-}
-
-pub fn eq_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_int().get_value();
-    let b_val = heap.get(b).as_int().get_value();
-    heap.alloc(Box::from(BoolVal::from(a_val == b_val)))
-}
-
-pub fn geq_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_int().get_value();
-    let b_val = heap.get(b).as_int().get_value();
-    heap.alloc(Box::from(BoolVal::from(a_val >= b_val)))
-}
-
-pub fn leq_int(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_int().get_value();
-    let b_val = heap.get(b).as_int().get_value();
-    heap.alloc(Box::from(BoolVal::from(a_val <= b_val)))
-}
-
-pub fn concat_str(a: usize, b: usize, heap: &mut Heap) -> usize {
-    let a_val = heap.get(a).as_str().get_value();
-    let b_val = heap.get(b).as_str().get_value();
-    heap.alloc(Box::from(StrVal::from(format!("{}{}", a_val, b_val))))
+pub fn concat(a: StrVal, b: StrVal) -> StrVal {
+    let a_val = a.get_value();
+    let b_val = b.get_value();
+    StrVal::from(format!("{}{}", a_val, b_val))
 }

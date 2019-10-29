@@ -32,18 +32,26 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
             let code1 = generate_code_exp(exp1)?;
             let code2 = generate_code_exp(exp2)?;
             match op {
-                BinOp::Add => quote! { add_int(#code1, #code2, h) },
-                BinOp::Subtract => quote! { sub_int(#code1, #code2, h) },
-                BinOp::Multiply => quote! { mul_int(#code1, #code2, h) },
-                BinOp::Divide => quote! { div_int(#code1, #code2, h) },
-                BinOp::LessThan => quote! { lt_int(#code1, #code2, h) },
-                BinOp::GreaterThan => quote! { gt_int(#code1, #code2, h) },
-                BinOp::LessOrEqual => quote! { leq_int(#code1, #code2, h) },
-                BinOp::GreaterOrEqual => quote! { geq_int(#code1, #code2, h) },
-                BinOp::EqualTo => quote! { eq_int(#code1, #code2, h) },
-                BinOp::And => quote! { and_bool(#code1, #code2, h) },
-                BinOp::Or => quote! { or_bool(#code1, #code2, h) },
-                BinOp::Concat => quote! { concat_str(#code1, #code2, h) },
+                BinOp::Add => quote! { (#code1 + #code2) },
+                BinOp::Subtract => quote! { (#code1 - #code2) },
+                BinOp::Multiply => quote! { (#code1 * #code2) },
+                BinOp::Divide => quote! { (#code1 / #code2) },
+                BinOp::LessThan => quote! { (#code1 < #code2) },
+                BinOp::GreaterThan => quote! { (#code1 > #code2) },
+                BinOp::LessOrEqual => quote! { (#code1 <= #code2) },
+                BinOp::GreaterOrEqual => quote! { (#code1 >= #code2) },
+                BinOp::EqualTo => quote! { (#code1 == #code2) },
+
+                // && and || cannot be operator overloaded in Rust
+                // so a special form, i.e. some native Rust syntax with short
+                // circuiting behavior needs to be used
+                BinOp::And => quote! {
+                    { if (#code1.get_value()) { #code2 } else { BoolVal::from(false) } }
+                },
+                BinOp::Or => quote! {
+                    { if (#code1.get_value()) { BoolVal::from(true) } else { #code2 } }
+                },
+                BinOp::Concat => quote! { concat(#code1, #code2) },
             }
         }),
         ExprKind::If(pred, cons, alt) => unimplemented!(),
@@ -66,17 +74,17 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
         ExprKind::Id(val) => unimplemented!(),
         ExprKind::Num(val) => Ok({
             quote! {
-                h.alloc(Val::Int(#val))
+                IntVal::from(#val)
             }
         }),
         ExprKind::Bool(val) => Ok({
             quote! {
-                h.alloc(Val::Bool(#val))
+                BoolVal::from(#val)
             }
         }),
         ExprKind::Str(val) => Ok({
             quote! {
-                h.alloc(Val::Str(String::from(#val)))
+                StrVal::from(String::from(#val))
             }
         }),
     }
