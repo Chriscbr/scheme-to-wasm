@@ -92,10 +92,7 @@ fn parse_func_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError>
         .map(|val| parse_type(val))
         .collect::<Result<Vec<Type>, ParseError>>()?;
     let return_type = parse_type(&lst_vec[lst_vec.len() - 1])?;
-    Ok(Type::Func(
-        Vector::from(input_types),
-        Box::from(return_type),
-    ))
+    Ok(Type::Func(Vector::from(input_types), Box::new(return_type)))
 }
 
 fn parse_list_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
@@ -105,7 +102,7 @@ fn parse_list_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError>
         ));
     }
     let lst_type = parse_type(&lst_vec[1])?;
-    Ok(Type::List(Box::from(lst_type)))
+    Ok(Type::List(Box::new(lst_type)))
 }
 
 fn parse_tuple_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseError> {
@@ -164,7 +161,7 @@ fn parse_exists_annotation(lst_vec: Vec<lexpr::Value>) -> Result<Type, ParseErro
         }
     };
     let lst_type = parse_type(&lst_vec[2])?;
-    Ok(Type::Exists(type_var_num, Box::from(lst_type)))
+    Ok(Type::Exists(type_var_num, Box::new(lst_type)))
 }
 
 fn parse_array(exps: &[lexpr::Value]) -> Result<Vector<Expr>, ParseError> {

@@ -46,7 +46,7 @@ impl Expr {
     pub fn new(kind: ExprKind) -> Expr {
         Expr {
             checked_type: Type::Unknown,
-            kind: Box::from(kind),
+            kind: Box::new(kind),
         }
     }
 }

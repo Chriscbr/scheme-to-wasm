@@ -30,7 +30,7 @@ fn test_parse_type_existentials() {
         parse_type(&exp).unwrap(),
         Type::Exists(
             0,
-            Box::from(Type::Func(vector![Type::TypeVar(0)], Box::from(Type::Bool)))
+            Box::new(Type::Func(vector![Type::TypeVar(0)], Box::new(Type::Bool)))
         )
     );
 }
@@ -38,12 +38,12 @@ fn test_parse_type_existentials() {
 #[test]
 fn test_parse_type_lists() {
     let exp = lexpr::from_str("(list int)").unwrap();
-    assert_eq!(parse_type(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+    assert_eq!(parse_type(&exp).unwrap(), Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(list (list int))").unwrap();
     assert_eq!(
         parse_type(&exp).unwrap(),
-        Type::List(Box::from(Type::List(Box::from(Type::Int))))
+        Type::List(Box::new(Type::List(Box::new(Type::Int))))
     );
 }
 
@@ -80,7 +80,7 @@ fn test_parse_type_records() {
             (String::from("init"), Type::Str),
             (
                 String::from("update"),
-                Type::Func(vector![Type::Str], Box::from(Type::Str))
+                Type::Func(vector![Type::Str], Box::new(Type::Str))
             )
         ])
     );
@@ -91,19 +91,19 @@ fn test_parse_type_functions() {
     let exp = lexpr::from_str("(-> int)").unwrap();
     assert_eq!(
         parse_type(&exp).unwrap(),
-        Type::Func(vector![], Box::from(Type::Int))
+        Type::Func(vector![], Box::new(Type::Int))
     );
 
     let exp = lexpr::from_str("(-> int int)").unwrap();
     assert_eq!(
         parse_type(&exp).unwrap(),
-        Type::Func(vector![Type::Int], Box::from(Type::Int))
+        Type::Func(vector![Type::Int], Box::new(Type::Int))
     );
 
     let exp = lexpr::from_str("(-> string int bool)").unwrap();
     assert_eq!(
         parse_type(&exp).unwrap(),
-        Type::Func(vector![Type::Str, Type::Int], Box::from(Type::Bool))
+        Type::Func(vector![Type::Str, Type::Int], Box::new(Type::Bool))
     );
 
     let exp = lexpr::from_str("(-> (-> int int bool) int int bool)").unwrap();
@@ -111,11 +111,11 @@ fn test_parse_type_functions() {
         parse_type(&exp).unwrap(),
         Type::Func(
             vector![
-                Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Bool)),
+                Type::Func(vector![Type::Int, Type::Int], Box::new(Type::Bool)),
                 Type::Int,
                 Type::Int
             ],
-            Box::from(Type::Bool)
+            Box::new(Type::Bool)
         )
     );
 }

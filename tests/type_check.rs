@@ -113,23 +113,23 @@ fn test_typecheck_binops_sad() {
 fn test_typecheck_lists_happy() {
     let exp = lexpr::from_str("(null int)").unwrap();
     let exp = parse(&exp).unwrap();
-    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(null bool)").unwrap();
     let exp = parse(&exp).unwrap();
-    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Bool)));
+    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::new(Type::Bool)));
 
     let exp = lexpr::from_str("(cons 3 (null int))").unwrap();
     let exp = parse(&exp).unwrap();
-    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(cons 3 (cons 4 (null int)))").unwrap();
     let exp = parse(&exp).unwrap();
-    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str(r#"(cons "foo" (cons "bar" (null string)))"#).unwrap();
     let exp = parse(&exp).unwrap();
-    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Str)));
+    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::new(Type::Str)));
 
     // NOTE: these two cases probably looks weird, but it is the simplest solution
     // we can just assume car/cdr of an empty list is the type of the list's items
@@ -140,7 +140,7 @@ fn test_typecheck_lists_happy() {
 
     let exp = lexpr::from_str("(cdr (null int))").unwrap();
     let exp = parse(&exp).unwrap();
-    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(car (cons 3 (null int)))").unwrap();
     let exp = parse(&exp).unwrap();
@@ -148,7 +148,7 @@ fn test_typecheck_lists_happy() {
 
     let exp = lexpr::from_str("(cdr (cons 3 (null int)))").unwrap();
     let exp = parse(&exp).unwrap();
-    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::from(Type::Int)));
+    assert_eq!(type_check(&exp).unwrap(), Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(null? (null int))").unwrap();
     let exp = parse(&exp).unwrap();
@@ -412,21 +412,21 @@ fn test_typecheck_lambda_happy() {
     let exp = parse(&exp).unwrap();
     assert_eq!(
         type_check(&exp).unwrap(),
-        Type::Func(vector![], Box::from(Type::Int))
+        Type::Func(vector![], Box::new(Type::Int))
     );
 
     let exp = lexpr::from_str("(lambda ((x : int)) : bool (< x 5))").unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(
         type_check(&exp).unwrap(),
-        Type::Func(vector![Type::Int], Box::from(Type::Bool))
+        Type::Func(vector![Type::Int], Box::new(Type::Bool))
     );
 
     let exp = lexpr::from_str("(lambda ((x : int) (y : int)) : int (* x y))").unwrap();
     let exp = parse(&exp).unwrap();
     assert_eq!(
         type_check(&exp).unwrap(),
-        Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Int))
+        Type::Func(vector![Type::Int, Type::Int], Box::new(Type::Int))
     );
 
     let exp =
@@ -437,11 +437,11 @@ fn test_typecheck_lambda_happy() {
         type_check(&exp).unwrap(),
         Type::Func(
             vector![
-                Type::Func(vector![Type::Int, Type::Int], Box::from(Type::Bool)),
+                Type::Func(vector![Type::Int, Type::Int], Box::new(Type::Bool)),
                 Type::Int,
                 Type::Int
             ],
-            Box::from(Type::Bool)
+            Box::new(Type::Bool)
         )
     );
 }
@@ -541,10 +541,10 @@ fn test_typecheck_apply_hof_happy() {
     let exp = parse(&exp).unwrap();
     let map_type = Type::Func(
         vector![
-            Type::Func(vector![Type::Int], Box::from(Type::Int)),
-            Type::List(Box::from(Type::Int)),
+            Type::Func(vector![Type::Int], Box::new(Type::Int)),
+            Type::List(Box::new(Type::Int)),
         ],
-        Box::from(Type::List(Box::from(Type::Int))),
+        Box::new(Type::List(Box::new(Type::Int))),
     ); // (-> (-> int int) (list int) (list int))
     let mut env = TypeEnv::new();
     env = env.add_binding((String::from("map"), map_type.clone()));

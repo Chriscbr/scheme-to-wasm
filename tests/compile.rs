@@ -60,7 +60,7 @@ fn run_code(code: String) -> Result<String, Box<dyn Error>> {
     // then the Rust code failed. Feel free to change this if this isn't
     // the case.
     if !output.stderr.is_empty() {
-        Err(Box::from(RuntimeError::from(
+        Err(Box::new(RuntimeError::from(
             String::from_utf8(output.stderr)?.as_str(),
         )))
     } else {

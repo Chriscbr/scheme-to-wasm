@@ -14,21 +14,21 @@ fn test_type_var_substitute_idempotent() {
     );
 
     // no substitution (list)
-    let typ = Type::List(Box::from(Type::Int));
+    let typ = Type::List(Box::new(Type::Int));
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
         type_var_substitute(&typ, type_var, &replace_with),
-        Type::List(Box::from(Type::Int))
+        Type::List(Box::new(Type::Int))
     );
 
     // no substitution (function)
-    let typ = Type::Func(vector![Type::Str, Type::Bool], Box::from(Type::Str));
+    let typ = Type::Func(vector![Type::Str, Type::Bool], Box::new(Type::Str));
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
         type_var_substitute(&typ, type_var, &replace_with),
-        Type::Func(vector![Type::Str, Type::Bool], Box::from(Type::Str))
+        Type::Func(vector![Type::Str, Type::Bool], Box::new(Type::Str))
     );
 
     // no substitution (tuple)
@@ -41,21 +41,21 @@ fn test_type_var_substitute_idempotent() {
     );
 
     // no substitution (existential, different bound type)
-    let typ = Type::Exists(1, Box::from(Type::TypeVar(1)));
+    let typ = Type::Exists(1, Box::new(Type::TypeVar(1)));
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
         type_var_substitute(&typ, type_var, &replace_with),
-        Type::Exists(1, Box::from(Type::TypeVar(1))),
+        Type::Exists(1, Box::new(Type::TypeVar(1))),
     );
 
     // no substitution (existential, same bound type - inner typevar should get renamed)
-    let typ = Type::Exists(0, Box::from(Type::TypeVar(0)));
+    let typ = Type::Exists(0, Box::new(Type::TypeVar(0)));
     let type_var = 0;
     let replace_with = Type::Bool;
     assert_eq!(
         type_var_substitute(&typ, type_var, &replace_with),
-        Type::Exists(1, Box::from(Type::TypeVar(1))),
+        Type::Exists(1, Box::new(Type::TypeVar(1))),
     );
 
     // no substitution (different type var)
@@ -80,24 +80,24 @@ fn test_type_var_substitute_happy() {
     );
 
     // substitution (list)
-    let typ = Type::List(Box::from(Type::TypeVar(3)));
+    let typ = Type::List(Box::new(Type::TypeVar(3)));
     let type_var = 3;
     let replace_with = Type::Bool;
     assert_eq!(
         type_var_substitute(&typ, type_var, &replace_with),
-        Type::List(Box::from(Type::Bool))
+        Type::List(Box::new(Type::Bool))
     );
 
     // substitution (function)
     let typ = Type::Func(
         vector![Type::TypeVar(3), Type::Bool],
-        Box::from(Type::TypeVar(3)),
+        Box::new(Type::TypeVar(3)),
     );
     let type_var = 3;
     let replace_with = Type::Int;
     assert_eq!(
         type_var_substitute(&typ, type_var, &replace_with),
-        Type::Func(vector![Type::Int, Type::Bool], Box::from(Type::Int))
+        Type::Func(vector![Type::Int, Type::Bool], Box::new(Type::Int))
     );
 
     // substitution (tuple)
@@ -112,7 +112,7 @@ fn test_type_var_substitute_happy() {
     // substitution (existential)
     let typ = Type::Exists(
         1,
-        Box::from(Type::Tuple(vector![Type::TypeVar(0), Type::TypeVar(1)])),
+        Box::new(Type::Tuple(vector![Type::TypeVar(0), Type::TypeVar(1)])),
     );
     let type_var = 0;
     let replace_with = Type::Bool;
@@ -120,7 +120,7 @@ fn test_type_var_substitute_happy() {
         type_var_substitute(&typ, type_var, &replace_with),
         Type::Exists(
             1,
-            Box::from(Type::Tuple(vector![Type::Bool, Type::TypeVar(1)]))
+            Box::new(Type::Tuple(vector![Type::Bool, Type::TypeVar(1)]))
         ),
     );
 }

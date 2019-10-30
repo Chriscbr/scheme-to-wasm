@@ -141,7 +141,7 @@ fn tc_lambda_with_env(
     let body_typ = tc_with_env(body, &new_env)?;
     if *ret_typ == body_typ {
         let param_types: Vector<Type> = params.iter().map(|pair| pair.1.clone()).collect();
-        Ok(Type::Func(param_types, Box::from(ret_typ.clone())))
+        Ok(Type::Func(param_types, Box::new(ret_typ.clone())))
     } else {
         Err(TypeCheckError::from(
             "Lambda expression body type does not match the expected return type.",
@@ -213,7 +213,7 @@ fn tc_car_with_env(pair: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeCheckEr
 fn tc_cdr_with_env(pair: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeCheckError> {
     let pair_typ = tc_with_env(pair, env)?;
     match pair_typ {
-        Type::List(boxed_type) => Ok(Type::List(Box::from(*boxed_type))),
+        Type::List(boxed_type) => Ok(Type::List(Box::new(*boxed_type))),
         _ => Err(TypeCheckError::from(
             "Expression in car is not a list type.",
         )),
@@ -395,7 +395,7 @@ pub fn tc_with_env(value: &Expr, env: &TypeEnv<Type>) -> Result<Type, TypeCheckE
         ExprKind::Car(exp) => tc_car_with_env(&exp, env),
         ExprKind::Cdr(exp) => tc_cdr_with_env(&exp, env),
         ExprKind::IsNull(exp) => tc_is_null_with_env(&exp, env),
-        ExprKind::Null(typ) => Ok(Type::List(Box::from(typ.clone()))),
+        ExprKind::Null(typ) => Ok(Type::List(Box::new(typ.clone()))),
         ExprKind::Tuple(exps) => tc_tuple_with_env(&exps, env),
         ExprKind::TupleGet(tup, key) => tc_tuple_get_with_env(&tup, *key, env),
         ExprKind::Pack(val, sub, exist) => tc_pack_with_env(&val, &sub, &exist, env),

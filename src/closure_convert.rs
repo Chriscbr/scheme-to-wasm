@@ -29,7 +29,7 @@ fn cc_type(typ: &Type) -> Result<Type, ClosureConvertError> {
         Type::Str => Ok(Type::Str),
         Type::List(base_typ) => {
             let cc_base_typ = cc_type(base_typ)?;
-            Ok(Type::List(Box::from(cc_base_typ)))
+            Ok(Type::List(Box::new(cc_base_typ)))
         }
         Type::Func(in_typs, ret_typ) => {
             let mut cc_in_typs = cc_type_array(in_typs)?;
@@ -38,10 +38,10 @@ fn cc_type(typ: &Type) -> Result<Type, ClosureConvertError> {
             let typ_var = Type::TypeVar(typ_var_id);
             cc_in_typs.push_front(typ_var.clone());
             let base_typ = Type::Tuple(vector![
-                Type::Func(cc_in_typs, Box::from(cc_ret_typ),),
+                Type::Func(cc_in_typs, Box::new(cc_ret_typ),),
                 typ_var.clone()
             ]);
-            Ok(Type::Exists(typ_var_id, Box::from(base_typ)))
+            Ok(Type::Exists(typ_var_id, Box::new(base_typ)))
         }
         Type::Tuple(typs) => {
             let cc_typs = cc_type_array(typs)?;
@@ -56,7 +56,7 @@ fn cc_type(typ: &Type) -> Result<Type, ClosureConvertError> {
         }
         Type::Exists(typ_var, base_typ) => {
             let cc_base_typ = cc_type(base_typ)?;
-            Ok(Type::Exists(*typ_var, Box::from(cc_base_typ)))
+            Ok(Type::Exists(*typ_var, Box::new(cc_base_typ)))
         }
         Type::TypeVar(x) => Ok(Type::TypeVar(*x)),
         Type::Unknown => Ok(Type::Unknown),
@@ -150,7 +150,7 @@ fn cc_lambda(
     ));
 
     let orig_param_typs = params.clone().iter().map(|pair| pair.1.clone()).collect();
-    let new_lambda_typ = cc_type(&Type::Func(orig_param_typs, Box::from(ret_type.clone())))?;
+    let new_lambda_typ = cc_type(&Type::Func(orig_param_typs, Box::new(ret_type.clone())))?;
 
     let new_closure = Expr::new(ExprKind::Tuple(vector![new_lambda, new_env]));
     Ok(Expr::new(ExprKind::Pack(

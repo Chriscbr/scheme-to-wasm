@@ -18,7 +18,7 @@ fn run(heap: &mut Heap) -> impl HeapVal {
     };
     let out = func1.apply(val);
     let nil = ListVal::Null;
-    let pair = ListVal::Cons(out, Box::from(nil));
+    let pair = ListVal::Cons(out, Box::new(nil));
     pair
 }
 

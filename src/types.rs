@@ -65,7 +65,7 @@ pub fn type_var_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Ty
         Type::Str => Type::Str,
         Type::List(base_typ) => {
             let sbase_typ = type_var_substitute(base_typ, type_var, replace_with);
-            Type::List(Box::from(sbase_typ))
+            Type::List(Box::new(sbase_typ))
         }
         Type::Func(in_typs, ret_typ) => {
             let sin_typs: Vector<Type> = in_typs
@@ -73,7 +73,7 @@ pub fn type_var_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Ty
                 .map(|inner_typ| type_var_substitute(inner_typ, type_var, replace_with))
                 .collect();
             let sret_typ = type_var_substitute(ret_typ, type_var, replace_with);
-            Type::Func(sin_typs, Box::from(sret_typ))
+            Type::Func(sin_typs, Box::new(sret_typ))
         }
         Type::Tuple(typs) => {
             let styps: Vector<Type> = typs
@@ -98,10 +98,10 @@ pub fn type_var_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Ty
                 let base_typ_clean =
                     type_var_substitute(base_typ, *base_typ_var, &Type::TypeVar(new_base_typ_var));
                 let sbase_typ = type_var_substitute(&base_typ_clean, type_var, replace_with);
-                Type::Exists(new_base_typ_var, Box::from(sbase_typ))
+                Type::Exists(new_base_typ_var, Box::new(sbase_typ))
             } else {
                 let sbase_typ = type_var_substitute(base_typ, type_var, replace_with);
-                Type::Exists(*base_typ_var, Box::from(sbase_typ))
+                Type::Exists(*base_typ_var, Box::new(sbase_typ))
             }
         }
         Type::TypeVar(x) => {
