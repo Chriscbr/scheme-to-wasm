@@ -1,6 +1,6 @@
 use crate::common::{BinOp, Expr, ExprKind, Prog};
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 
 #[derive(Clone, Debug)]
 pub struct GenerateCodeError(String);
@@ -60,7 +60,23 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
                 }
             } }
         }),
-        ExprKind::Let(bindings, body) => unimplemented!(),
+        ExprKind::Let(bindings, body) => Ok({
+            let binding_stmts = bindings
+                .iter()
+                .map(|bind| {
+                    let bind_exp_code = generate_code_exp(&bind.1)?;
+                    let name = format_ident!("{}", bind.0);
+                    Ok(quote! {
+                        let #name = #bind_exp_code;
+                    })
+                })
+                .collect::<Result<Vec<TokenStream>, GenerateCodeError>>()?;
+            let body_code = generate_code_exp(body)?;
+            quote! { {
+                #(#binding_stmts)*
+                { #body_code }
+            } }
+        }),
         ExprKind::Lambda(params, ret_type, body) => unimplemented!(),
         ExprKind::FnApp(func, args) => unimplemented!(),
         ExprKind::Record(bindings) => unimplemented!(),
@@ -76,7 +92,12 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
         ExprKind::TupleGet(tup, key) => unimplemented!(),
         ExprKind::Pack(val, sub, exist) => unimplemented!(),
         ExprKind::Unpack(var, package, typ_sub, body) => unimplemented!(),
-        ExprKind::Id(val) => unimplemented!(),
+        ExprKind::Id(val) => Ok({
+            let name = format_ident!("{}", val);
+            quote! {
+                #name
+            }
+        }),
         ExprKind::Num(val) => Ok({
             quote! {
                 IntVal::from(#val)

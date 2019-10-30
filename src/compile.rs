@@ -28,8 +28,10 @@ pub fn compile(input: lexpr::Value) -> Result<String, Box<dyn Error>> {
     let exp = parse(&input)?;
     type_check(&exp)?;
     let cc_exp = closure_convert(&exp)?;
+    println!("{}", cc_exp.clone());
     type_check(&cc_exp)?;
     let prog = lambda_lift(&cc_exp)?;
+    println!("{}", prog.clone());
     type_check_prog(&prog)?;
     let code = generate_code_prog(&prog)?;
     let lib_code = get_library_code()?;

@@ -124,6 +124,20 @@ fn test_compile_if() {
 
 #[test]
 #[serial]
+fn test_compile_let() {
+    let exp = lexpr::from_str("(let ((x 3)) (+ x 5))").unwrap();
+    let code = compile(exp).unwrap();
+    let result = run_code(code).unwrap();
+    assert_eq!(result, String::from("8"));
+
+    let exp = lexpr::from_str("(let ((x 3) (y 4)) (let ((z 5)) (+ x (+ y z))))").unwrap();
+    let code = compile(exp).unwrap();
+    let result = run_code(code).unwrap();
+    assert_eq!(result, String::from("12"));
+}
+
+#[test]
+#[serial]
 fn test_compile_div_by_zero() {
     let exp = lexpr::from_str("(/ 3 0)").unwrap();
     let code = compile(exp).unwrap();

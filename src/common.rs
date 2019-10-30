@@ -213,6 +213,7 @@ impl<T: Clone> TypeEnv<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct Prog {
     pub fns: Vector<(String, Expr)>,
     pub exp: Expr,
