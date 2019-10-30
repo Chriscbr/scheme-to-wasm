@@ -136,13 +136,24 @@ fn test_compile_let() {
     assert_eq!(result, String::from("12"));
 }
 
+// TODO: update tests to reflect more accurate type than "(null T)""
 #[test]
 #[serial]
 fn test_compile_cons() {
     let exp = lexpr::from_str("(cons 3 (cons 4 (null int)))").unwrap();
     let code = compile(exp).unwrap();
     let result = run_code(code).unwrap();
-    assert_eq!(result, String::from("(cons 3 (cons 4 (null T)))"));
+    assert_eq!(result, String::from("(cons 3 (cons 4 (null int)))"));
+
+    let exp = lexpr::from_str("(car (cons 3 (cons 4 (null int))))").unwrap();
+    let code = compile(exp).unwrap();
+    let result = run_code(code).unwrap();
+    assert_eq!(result, String::from("3"));
+
+    let exp = lexpr::from_str("(cdr (cons 3 (cons 4 (null int))))").unwrap();
+    let code = compile(exp).unwrap();
+    let result = run_code(code).unwrap();
+    assert_eq!(result, String::from("(cons 4 (null int))"));
 }
 
 #[test]

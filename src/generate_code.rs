@@ -112,8 +112,18 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
                 ListVal::Cons(#car_code, Box::from(#cdr_code))
             }}
         }),
-        ExprKind::Car(exp) => unimplemented!(),
-        ExprKind::Cdr(exp) => unimplemented!(),
+        ExprKind::Car(exp) => Ok({
+            let exp_code = generate_code_exp(exp)?;
+            quote! {
+                #exp_code.get_car()
+            }
+        }),
+        ExprKind::Cdr(exp) => Ok({
+            let exp_code = generate_code_exp(exp)?;
+            quote! {
+                #exp_code.get_cdr()
+            }
+        }),
         ExprKind::IsNull(exp) => Ok({
             let exp_code = generate_code_exp(exp)?;
             quote! {
