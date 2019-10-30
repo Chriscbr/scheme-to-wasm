@@ -138,6 +138,15 @@ fn test_compile_let() {
 
 #[test]
 #[serial]
+fn test_compile_cons() {
+    let exp = lexpr::from_str("(cons 3 (cons 4 (null int)))").unwrap();
+    let code = compile(exp).unwrap();
+    let result = run_code(code).unwrap();
+    assert_eq!(result, String::from("(cons 3 (cons 4 (null T)))"));
+}
+
+#[test]
+#[serial]
 fn test_compile_div_by_zero() {
     let exp = lexpr::from_str("(/ 3 0)").unwrap();
     let code = compile(exp).unwrap();

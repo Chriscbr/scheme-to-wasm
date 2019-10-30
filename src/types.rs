@@ -126,7 +126,9 @@ pub fn type_contains_var(typ: &Type, var: u64) -> bool {
         }
         Type::Tuple(typs) => typs.iter().any(|typ| type_contains_var(typ, var)),
         Type::Record(fields) => fields.iter().any(|field| type_contains_var(&field.1, var)),
-        Type::Exists(bound_var, typ) => *bound_var != var && type_contains_var(typ, var),
+        Type::Exists(bound_var, inner_typ) => {
+            *bound_var != var && type_contains_var(inner_typ, var)
+        }
         Type::TypeVar(x) => *x == var,
         Type::Unknown => false,
     }

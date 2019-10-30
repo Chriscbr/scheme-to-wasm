@@ -1,4 +1,5 @@
 use crate::common::{BinOp, Expr, ExprKind, Prog};
+use crate::types::Type;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -20,6 +21,27 @@ impl std::fmt::Display for GenerateCodeError {
     }
 }
 
+// TODO: clean up / remove function if unneeded
+pub fn generate_code_typ(typ: &Type) -> Result<TokenStream, GenerateCodeError> {
+    match typ {
+        Type::Int => Ok(quote! { IntVal }),
+        Type::Bool => Ok(quote! { BoolVal }),
+        Type::Str => Ok(quote! { StrVal }),
+        Type::List(inner_typ) => Ok({
+            let inner_code = generate_code_typ(inner_typ)?;
+            quote! {
+                ListVal<#inner_code>
+            }
+        }),
+        Type::Func(typs, ret_typ) => unimplemented!(),
+        Type::Tuple(typs) => unimplemented!(),
+        Type::Record(fields) => unimplemented!(),
+        Type::Exists(bound_var, inner_typ) => unimplemented!(),
+        Type::TypeVar(x) => unimplemented!(),
+        Type::Unknown => panic!("Trying to convert an unknown type to Rust!"),
+    }
+}
+
 pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
     match &*exp.kind {
         ExprKind::Binop(op, exp1, exp2) => Ok({
@@ -30,20 +52,20 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
                 BinOp::Subtract => quote! { (#code1 - #code2) },
                 BinOp::Multiply => quote! { (#code1 * #code2) },
                 BinOp::Divide => quote! { (#code1 / #code2) },
-                BinOp::LessThan => quote! { BoolVal::from(#code1 < #code2) },
-                BinOp::GreaterThan => quote! { BoolVal::from(#code1 > #code2) },
-                BinOp::LessOrEqual => quote! { BoolVal::from(#code1 <= #code2) },
-                BinOp::GreaterOrEqual => quote! { BoolVal::from(#code1 >= #code2) },
-                BinOp::EqualTo => quote! { BoolVal::from(#code1 == #code2) },
+                BinOp::LessThan => quote! { BoolVal::new(#code1 < #code2) },
+                BinOp::GreaterThan => quote! { BoolVal::new(#code1 > #code2) },
+                BinOp::LessOrEqual => quote! { BoolVal::new(#code1 <= #code2) },
+                BinOp::GreaterOrEqual => quote! { BoolVal::new(#code1 >= #code2) },
+                BinOp::EqualTo => quote! { BoolVal::new(#code1 == #code2) },
 
                 // && and || cannot be operator overloaded in Rust
                 // so a special form, i.e. some native Rust syntax with short
                 // circuiting behavior needs to be used
                 BinOp::And => quote! {
-                    { if { #code1.get_value() } { #code2 } else { BoolVal::from(false) } }
+                    { if { #code1.get_value() } { #code2 } else { BoolVal::new(false) } }
                 },
                 BinOp::Or => quote! {
-                    { if { #code1.get_value() } { BoolVal::from(true) } else { #code2 } }
+                    { if { #code1.get_value() } { BoolVal::new(true) } else { #code2 } }
                 },
                 BinOp::Concat => quote! { concat(#code1, #code2) },
             }
@@ -83,11 +105,29 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
         ExprKind::RecordGet(record, key) => unimplemented!(),
         ExprKind::Begin(exps) => unimplemented!(),
         ExprKind::Set(var_name, exp) => unimplemented!(),
-        ExprKind::Cons(first, second) => unimplemented!(),
+        ExprKind::Cons(car, cdr) => Ok({
+            let car_code = generate_code_exp(car)?;
+            let cdr_code = generate_code_exp(cdr)?;
+            quote! { {
+                ListVal::Cons(#car_code, Box::from(#cdr_code))
+            }}
+        }),
         ExprKind::Car(exp) => unimplemented!(),
         ExprKind::Cdr(exp) => unimplemented!(),
-        ExprKind::IsNull(exp) => unimplemented!(),
-        ExprKind::Null(typ) => unimplemented!(),
+        ExprKind::IsNull(exp) => Ok({
+            let exp_code = generate_code_exp(exp)?;
+            quote! {
+                #exp_code.is_null()
+            }
+        }),
+        ExprKind::Null(typ) => Ok({
+            let _typ_code = generate_code_typ(typ)?;
+            // Rust does not require use to parameterize ListVal<T> since it
+            // can be inferred.
+            quote! {
+                ListVal::Null
+            }
+        }),
         ExprKind::Tuple(exps) => unimplemented!(),
         ExprKind::TupleGet(tup, key) => unimplemented!(),
         ExprKind::Pack(val, sub, exist) => unimplemented!(),
@@ -100,17 +140,17 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
         }),
         ExprKind::Num(val) => Ok({
             quote! {
-                IntVal::from(#val)
+                IntVal::new(#val)
             }
         }),
         ExprKind::Bool(val) => Ok({
             quote! {
-                BoolVal::from(#val)
+                BoolVal::new(#val)
             }
         }),
         ExprKind::Str(val) => Ok({
             quote! {
-                StrVal::from(String::from(#val))
+                StrVal::new(String::from(#val))
             }
         }),
     }

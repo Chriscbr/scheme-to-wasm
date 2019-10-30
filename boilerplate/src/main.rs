@@ -7,16 +7,19 @@ struct Func1 {
 
 impl Function1<IntVal, IntVal> for Func1 {
     fn apply(self, x: IntVal) -> IntVal {
-        x + IntVal::from(3)
+        x + IntVal::new(3)
     }
 }
 
 fn run(heap: &mut Heap) -> impl HeapVal {
-    let val = IntVal::from(5);
+    let val = IntVal::new(5);
     let func1 = Func1 {
         env: HashMap::new(),
     };
-    func1.apply(val)
+    let out = func1.apply(val);
+    let nil = ListVal::Null;
+    let pair = ListVal::Cons(out, Box::from(nil));
+    pair
 }
 
 fn main() {

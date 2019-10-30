@@ -53,21 +53,21 @@ impl<T: Display + Clone + 'static> HeapVal for T {
     fn as_int(&self) -> IntVal {
         match self.as_any().downcast_ref::<IntVal>() {
             Some(x) => x.clone(),
-            None => panic!(),
+            None => panic!("Called as_int on non-IntVal value."),
         }
     }
 
     fn as_bool(&self) -> BoolVal {
         match self.as_any().downcast_ref::<BoolVal>() {
             Some(x) => x.clone(),
-            None => panic!(),
+            None => panic!("Called as_bool on non-BoolVal"),
         }
     }
 
     fn as_str(&self) -> StrVal {
         match self.as_any().downcast_ref::<StrVal>() {
             Some(x) => x.clone(),
-            None => panic!(),
+            None => panic!("Called as_str on non-StrVal"),
         }
     }
 }
@@ -78,14 +78,12 @@ pub struct IntVal {
 }
 
 impl IntVal {
+    pub fn new(value: i64) -> IntVal {
+        IntVal { value }
+    }
+
     pub fn get_value(&self) -> i64 {
         self.value
-    }
-}
-
-impl From<i64> for IntVal {
-    fn from(value: i64) -> IntVal {
-        IntVal { value }
     }
 }
 
@@ -117,7 +115,7 @@ impl ops::Add<IntVal> for IntVal {
     type Output = IntVal;
 
     fn add(self, rhs: IntVal) -> IntVal {
-        IntVal::from(self.value + rhs.get_value())
+        IntVal::new(self.value + rhs.get_value())
     }
 }
 
@@ -125,7 +123,7 @@ impl ops::Sub<IntVal> for IntVal {
     type Output = IntVal;
 
     fn sub(self, rhs: IntVal) -> IntVal {
-        IntVal::from(self.value - rhs.get_value())
+        IntVal::new(self.value - rhs.get_value())
     }
 }
 
@@ -133,7 +131,7 @@ impl ops::Mul<IntVal> for IntVal {
     type Output = IntVal;
 
     fn mul(self, rhs: IntVal) -> IntVal {
-        IntVal::from(self.value * rhs.get_value())
+        IntVal::new(self.value * rhs.get_value())
     }
 }
 
@@ -141,7 +139,7 @@ impl ops::Div<IntVal> for IntVal {
     type Output = IntVal;
 
     fn div(self, rhs: IntVal) -> IntVal {
-        IntVal::from(self.value / rhs.get_value())
+        IntVal::new(self.value / rhs.get_value())
     }
 }
 
@@ -151,14 +149,12 @@ pub struct BoolVal {
 }
 
 impl BoolVal {
+    pub fn new(value: bool) -> BoolVal {
+        BoolVal { value }
+    }
+
     pub fn get_value(&self) -> bool {
         self.value
-    }
-}
-
-impl From<bool> for BoolVal {
-    fn from(value: bool) -> BoolVal {
-        BoolVal { value }
     }
 }
 
@@ -174,6 +170,10 @@ pub struct StrVal {
 }
 
 impl StrVal {
+    pub fn new(value: String) -> StrVal {
+        StrVal { value }
+    }
+
     pub fn get_value(&self) -> String {
         self.value.clone()
     }
@@ -185,9 +185,46 @@ impl Display for StrVal {
     }
 }
 
-impl From<String> for StrVal {
-    fn from(value: String) -> StrVal {
-        StrVal { value }
+#[derive(Clone)]
+pub enum ListVal<T: HeapVal> {
+    Null,
+    Cons(T, Box<ListVal<T>>),
+}
+
+impl<T: HeapVal + Clone> ListVal<T> {
+    pub fn get_car(&self) -> T {
+        if let &ListVal::Cons(car, cdr) = &self {
+            car.clone()
+        } else {
+            panic!("Tried calling get_car on Null value.")
+        }
+    }
+
+    pub fn get_cdr(&self) -> ListVal<T> {
+        if let ListVal::Cons(car, cdr) = self {
+            *cdr.clone()
+        } else {
+            panic!("Tried calling get_cdr on Null value.")
+        }
+    }
+
+    pub fn is_null(&self) -> BoolVal {
+        match self {
+            ListVal::Cons(_, _) => BoolVal::new(false),
+            ListVal::Null => BoolVal::new(true),
+        }
+    }
+}
+
+impl<T: HeapVal> Display for ListVal<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let ListVal::Cons(car, cdr) = self {
+            write!(f, "(cons {} {})", car, *cdr)
+        } else {
+            // TODO: implement proper type names
+            // create a type_name helper method?
+            write!(f, "(null T)")
+        }
     }
 }
 
@@ -242,5 +279,5 @@ impl Heap {
 pub fn concat(a: StrVal, b: StrVal) -> StrVal {
     let a_val = a.get_value();
     let b_val = b.get_value();
-    StrVal::from(format!("{}{}", a_val, b_val))
+    StrVal::new(format!("{}{}", a_val, b_val))
 }
