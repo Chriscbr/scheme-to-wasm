@@ -1,5 +1,5 @@
 use crate::closure_convert::closure_convert;
-use crate::generate_code::generate_code_prog;
+use crate::generate_code::{generate_code_prog, CodeFragment};
 use crate::lambda_lift::lambda_lift;
 use crate::parse::parse;
 use crate::type_check::{type_check, type_check_prog};
@@ -7,8 +7,10 @@ use std::error::Error;
 use std::io;
 
 static BOILERPLATE: &str = r#"
+<GLOBALS>
+
 fn run(h: &mut Heap) -> impl HeapVal {
-    <EXP>
+    <INLINE>
 }
 
 fn main() {
@@ -33,8 +35,13 @@ pub fn compile(input: lexpr::Value) -> Result<String, Box<dyn Error>> {
     let prog = lambda_lift(&cc_exp)?;
     println!("{}", prog.clone());
     type_check_prog(&prog)?;
-    let code = generate_code_prog(&prog)?;
+    let CodeFragment {
+        inline: inline_code,
+        global: global_code,
+    } = generate_code_prog(&prog)?;
     let lib_code = get_library_code()?;
-    let main_code = BOILERPLATE.replace("<EXP>", format!("{}", code).as_str());
+    let main_code = BOILERPLATE
+        .replace("<INLINE>", format!("{}", inline_code).as_str())
+        .replace("<GLOBALS>", format!("{}", global_code).as_str());
     Ok(format!("{}\n{}", lib_code, main_code))
 }

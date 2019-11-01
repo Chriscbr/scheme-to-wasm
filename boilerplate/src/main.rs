@@ -1,5 +1,26 @@
 use boilerplate::*;
 use im::hashmap::HashMap;
+use std::fmt::Display;
+
+// ex. (record-ref (make-record (num 3) (name "hello")) num)
+
+#[derive(Clone)]
+pub struct Record0 {
+    pub num: IntVal,
+    pub name: StrVal,
+}
+
+impl DisplayType for Record0 {
+    fn fmt_type() -> String {
+        String::from("(record (num int) (name string))")
+    }
+}
+
+impl Display for Record0 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(record (num {}) (name {}))", self.num, self.name)
+    }
+}
 
 struct Func1 {
     env: HashMap<&'static str, usize>,
@@ -37,4 +58,12 @@ fn main() {
     let retrieved_val = heap.get_copy(index);
     let downcasted = as_int(retrieved_val);
     println!("{}", downcasted);
+
+    let int_val = IntVal(3);
+    let str_val = StrVal(String::from("hello"));
+    let rec_val = Record0 {
+        num: int_val,
+        name: str_val,
+    };
+    println!("{}", rec_val.name);
 }

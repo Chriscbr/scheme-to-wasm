@@ -84,6 +84,8 @@ pub fn as_list<U: HeapVal + Clone + 'static>(value: Box<dyn HeapVal>) -> ListVal
     }
 }
 
+// TODO: Theoretically, we could actually just implement DisplayType and HeapVal
+// and HValClone for base/primitive types. Worth considering?
 #[derive(Clone, Eq)]
 pub struct IntVal(pub i64);
 
