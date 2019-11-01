@@ -13,6 +13,12 @@ pub fn generate_env_name() -> String {
     name
 }
 
+pub fn generate_record_name() -> String {
+    let name = format!("Record{}", GENSYM_COUNT.load(Ordering::SeqCst));
+    GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
+    name
+}
+
 pub fn generate_var_name() -> String {
     let name = format!("temp{}", GENSYM_COUNT.load(Ordering::SeqCst));
     GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);

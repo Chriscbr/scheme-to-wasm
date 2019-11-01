@@ -12,13 +12,13 @@ pub struct Record0 {
 
 impl DisplayType for Record0 {
     fn fmt_type() -> String {
-        String::from("(record (num int) (name string))")
+        String::from("(record (num : int) (name : string))")
     }
 }
 
 impl Display for Record0 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(record (num {}) (name {}))", self.num, self.name)
+        write!(f, "(make-record (num {}) (name {}))", self.num, self.name)
     }
 }
 

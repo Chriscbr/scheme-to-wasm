@@ -1,5 +1,7 @@
-use crate::common::{BinOp, Expr, ExprKind, Prog};
+use crate::common::{generate_id, BinOp, Expr, ExprKind, Prog};
+use crate::type_check::type_check;
 use crate::types::Type;
+use im_rc::Vector;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::iter::FromIterator;
@@ -43,6 +45,14 @@ pub fn generate_code_typ(typ: &Type) -> Result<TokenStream, GenerateCodeError> {
     }
 }
 
+fn get_record_placeholder(fields: &Vector<(String, Expr)>) -> String {
+    let fields_str = fields
+        .iter()
+        .map(|pair| format!(" ({} {{}})", pair.0))
+        .collect::<String>();
+    format!("(make-record{})", fields_str)
+}
+
 /// Struct representing a pair of inline code and the global code necessary
 /// to support it.
 ///
@@ -55,6 +65,7 @@ pub struct CodeFragment {
     pub global: TokenStream,
 }
 
+// TODO: refactor each ExprKind into separate function
 pub fn generate_code_exp(exp: &Expr) -> Result<CodeFragment, GenerateCodeError> {
     match &*exp.kind {
         ExprKind::Binop(op, exp1, exp2) => Ok({
@@ -150,7 +161,82 @@ pub fn generate_code_exp(exp: &Expr) -> Result<CodeFragment, GenerateCodeError> 
         }),
         ExprKind::Lambda(params, ret_type, body) => unimplemented!(),
         ExprKind::FnApp(func, args) => unimplemented!(),
-        ExprKind::Record(bindings) => unimplemented!(),
+        ExprKind::Record(bindings) => Ok({
+            let mut globals = vec![];
+            let fields = bindings
+                .iter()
+                .map(|bind| {
+                    let CodeFragment {
+                        inline: bind_inline,
+                        global: bind_global,
+                    } = generate_code_exp(&bind.1)?;
+                    globals.push(bind_global);
+                    let name = format_ident!("{}", bind.0);
+                    Ok(quote! {
+                        #name: #bind_inline,
+                    })
+                })
+                .collect::<Result<Vec<TokenStream>, GenerateCodeError>>()?;
+            let field_types = bindings
+                .iter()
+                .map(|bind| {
+                    let field_typ = match type_check(&bind.1) {
+                        Ok(val) => val,
+                        Err(e) => {
+                            return Err(GenerateCodeError::from(
+                                format!("TypeCheckError: {}", e).as_str(),
+                            ))
+                        }
+                    };
+                    let field_typ_code = generate_code_typ(&field_typ)?;
+                    let name = format_ident!("{}", bind.0);
+                    Ok(quote! {
+                        pub #name: #field_typ_code,
+                    })
+                })
+                .collect::<Result<Vec<TokenStream>, GenerateCodeError>>()?;
+            // let record_name = generate_record_name();
+            let record_name = format_ident!("Record{}", generate_id());
+            // TODO: refactor type_checker to annotate types
+            let record_type = match type_check(&exp) {
+                Ok(val) => val,
+                Err(e) => {
+                    return Err(GenerateCodeError::from(
+                        format!("TypeCheckError: {}", e).as_str(),
+                    ))
+                }
+            };
+            let record_type_str = format!("{}", record_type);
+            let record_placeholder = get_record_placeholder(bindings);
+            let record_fields = bindings
+                .iter()
+                .map(|pair| format_ident!("{}", pair.0.clone()))
+                .collect::<Vec<proc_macro2::Ident>>();
+            let global = quote! {
+                #[derive(Clone)]
+                struct #record_name {
+                    #(#field_types)*
+                }
+
+                impl DisplayType for #record_name {
+                    fn fmt_type() -> String {
+                        String::from(#record_type_str)
+                    }
+                }
+
+                impl Display for #record_name {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(f, #record_placeholder, #(self.#record_fields),*)
+                    }
+                }
+            };
+            let inline = quote! { {
+                #record_name {
+                    #(#fields)*
+                }
+            } };
+            CodeFragment { inline, global }
+        }),
         ExprKind::RecordGet(record, key) => unimplemented!(),
         ExprKind::Begin(exps) => unimplemented!(),
         ExprKind::Set(var_name, exp) => unimplemented!(),

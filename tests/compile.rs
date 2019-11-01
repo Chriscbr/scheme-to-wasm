@@ -89,6 +89,15 @@ fn test_compile_primitives() {
 
 #[test]
 #[serial]
+fn test_compile_div_by_zero() {
+    let exp = lexpr::from_str("(/ 3 0)").unwrap();
+    let code = compile(exp).unwrap();
+    let result = run_code(code);
+    assert_eq!(result.is_err(), true);
+}
+
+#[test]
+#[serial]
 fn test_compile_binops() {
     let exp = lexpr::from_str("(+ (/ 8 2) (* (- 4 2) 3))").unwrap();
     let code = compile(exp).unwrap();
@@ -136,7 +145,6 @@ fn test_compile_let() {
     assert_eq!(result, String::from("12"));
 }
 
-// TODO: update tests to reflect more accurate type than "(null T)""
 #[test]
 #[serial]
 fn test_compile_cons() {
@@ -158,9 +166,12 @@ fn test_compile_cons() {
 
 #[test]
 #[serial]
-fn test_compile_div_by_zero() {
-    let exp = lexpr::from_str("(/ 3 0)").unwrap();
+fn test_compile_record() {
+    let exp = lexpr::from_str("(make-record (num 3) (name \"hello\"))").unwrap();
     let code = compile(exp).unwrap();
-    let result = run_code(code);
-    assert_eq!(result.is_err(), true);
+    let result = run_code(code).unwrap();
+    assert_eq!(
+        result,
+        String::from("(make-record (num 3) (name \"hello\"))")
+    );
 }
