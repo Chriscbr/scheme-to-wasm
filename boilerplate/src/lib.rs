@@ -56,6 +56,13 @@ impl<T: Display + DisplayType + Clone + 'static> HeapVal for T {
     }
 }
 
+pub fn as_typ<T: Clone + 'static>(value: Box<dyn HeapVal>) -> T {
+    match value.as_any().downcast_ref::<T>() {
+        Some(x) => x.clone(),
+        None => panic!("Called as_typ on non-matching type."),
+    }
+}
+
 pub fn as_int(value: Box<dyn HeapVal>) -> IntVal {
     match value.as_any().downcast_ref::<IntVal>() {
         Some(x) => x.clone(),
@@ -230,22 +237,22 @@ impl<T: HeapVal + Clone> Display for ListVal<T> {
 
 // The trait for all 0-arg functions
 pub trait Function0<R> {
-    fn apply(self) -> R;
+    fn apply(&self) -> R;
 }
 
 // The trait for all 1-arg functions
 pub trait Function1<X, R> {
-    fn apply(self, x: X) -> R;
+    fn apply(&self, x: X) -> R;
 }
 
 // The trait for all 2-arg functions
 pub trait Function2<X, Y, R> {
-    fn apply(self, x: X, y: Y) -> R;
+    fn apply(&self, x: X, y: Y) -> R;
 }
 
 // The trait for all 3-arg functions
 pub trait Function3<X, Y, Z, R> {
-    fn apply(self, x: X, y: Y, z: Z) -> R;
+    fn apply(&self, x: X, y: Y, z: Z) -> R;
 }
 
 #[derive(Default)]
