@@ -52,20 +52,20 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
                 BinOp::Subtract => quote! { (#code1 - #code2) },
                 BinOp::Multiply => quote! { (#code1 * #code2) },
                 BinOp::Divide => quote! { (#code1 / #code2) },
-                BinOp::LessThan => quote! { BoolVal::new(#code1 < #code2) },
-                BinOp::GreaterThan => quote! { BoolVal::new(#code1 > #code2) },
-                BinOp::LessOrEqual => quote! { BoolVal::new(#code1 <= #code2) },
-                BinOp::GreaterOrEqual => quote! { BoolVal::new(#code1 >= #code2) },
-                BinOp::EqualTo => quote! { BoolVal::new(#code1 == #code2) },
+                BinOp::LessThan => quote! { BoolVal(#code1 < #code2) },
+                BinOp::GreaterThan => quote! { BoolVal(#code1 > #code2) },
+                BinOp::LessOrEqual => quote! { BoolVal(#code1 <= #code2) },
+                BinOp::GreaterOrEqual => quote! { BoolVal(#code1 >= #code2) },
+                BinOp::EqualTo => quote! { BoolVal(#code1 == #code2) },
 
                 // && and || cannot be operator overloaded in Rust
                 // so a special form, i.e. some native Rust syntax with short
                 // circuiting behavior needs to be used
                 BinOp::And => quote! {
-                    { if { #code1.get_value() } { #code2 } else { BoolVal::new(false) } }
+                    { if { #code1.0 } { #code2 } else { BoolVal(false) } }
                 },
                 BinOp::Or => quote! {
-                    { if { #code1.get_value() } { BoolVal::new(true) } else { #code2 } }
+                    { if { #code1.0 } { BoolVal(true) } else { #code2 } }
                 },
                 BinOp::Concat => quote! { concat(#code1, #code2) },
             }
@@ -75,7 +75,7 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
             let cons_code = generate_code_exp(cons)?;
             let alt_code = generate_code_exp(alt)?;
             quote! { {
-                if { #pred_code.get_value() } {
+                if { #pred_code.0 } {
                     #cons_code
                 } else {
                     #alt_code
@@ -150,17 +150,17 @@ pub fn generate_code_exp(exp: &Expr) -> Result<TokenStream, GenerateCodeError> {
         }),
         ExprKind::Num(val) => Ok({
             quote! {
-                IntVal::new(#val)
+                IntVal(#val)
             }
         }),
         ExprKind::Bool(val) => Ok({
             quote! {
-                BoolVal::new(#val)
+                BoolVal(#val)
             }
         }),
         ExprKind::Str(val) => Ok({
             quote! {
-                StrVal::new(String::from(#val))
+                StrVal(String::from(#val))
             }
         }),
     }

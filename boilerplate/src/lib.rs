@@ -48,43 +48,32 @@ where
 /// is not possible to cast _any_ object to `Any`.
 pub trait HeapVal: HValClone + Display + DisplayType {
     fn as_any(&self) -> &dyn Any;
-    // TODO: consider changing these to just be global functions?
-    fn as_int(&self) -> IntVal;
-    fn as_bool(&self) -> BoolVal;
-    fn as_str(&self) -> StrVal;
-    // TODO: implement `as_list`.
-    // This is not currently possible using the current ListVal structure,
-    // since ListVal is parameterized, and hence this "as_list" function
-    // would need to be generic, or need to return a generic ListVal.
-    // It can't be generic, since then HeapVal would become
-
-    // fn as_list(&self) -> ListVal<dyn HeapVal>;
 }
 
 impl<T: Display + DisplayType + Clone + 'static> HeapVal for T {
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
 
-    fn as_int(&self) -> IntVal {
-        match self.as_any().downcast_ref::<IntVal>() {
-            Some(x) => x.clone(),
-            None => panic!("Called as_int on non-IntVal value."),
-        }
+pub fn as_int(value: Box<dyn HeapVal>) -> IntVal {
+    match value.as_any().downcast_ref::<IntVal>() {
+        Some(x) => x.clone(),
+        None => panic!("Called as_int on non-IntVal value."),
     }
+}
 
-    fn as_bool(&self) -> BoolVal {
-        match self.as_any().downcast_ref::<BoolVal>() {
-            Some(x) => x.clone(),
-            None => panic!("Called as_bool on non-BoolVal value."),
-        }
+pub fn as_bool(value: Box<dyn HeapVal>) -> BoolVal {
+    match value.as_any().downcast_ref::<BoolVal>() {
+        Some(x) => x.clone(),
+        None => panic!("Called as_bool on non-BoolVal value."),
     }
+}
 
-    fn as_str(&self) -> StrVal {
-        match self.as_any().downcast_ref::<StrVal>() {
-            Some(x) => x.clone(),
-            None => panic!("Called as_str on non-StrVal value."),
-        }
+pub fn as_str(value: Box<dyn HeapVal>) -> StrVal {
+    match value.as_any().downcast_ref::<StrVal>() {
+        Some(x) => x.clone(),
+        None => panic!("Called as_str on non-StrVal value."),
     }
 }
 
@@ -96,9 +85,7 @@ pub fn as_list<U: HeapVal + Clone + 'static>(value: Box<dyn HeapVal>) -> ListVal
 }
 
 #[derive(Clone, Eq)]
-pub struct IntVal {
-    value: i64,
-}
+pub struct IntVal(pub i64);
 
 impl DisplayType for IntVal {
     fn fmt_type() -> String {
@@ -106,25 +93,15 @@ impl DisplayType for IntVal {
     }
 }
 
-impl IntVal {
-    pub fn new(value: i64) -> IntVal {
-        IntVal { value }
-    }
-
-    pub fn get_value(&self) -> i64 {
-        self.value
-    }
-}
-
 impl Display for IntVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.0)
     }
 }
 
 impl Ord for IntVal {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.value.cmp(&other.get_value())
+        self.0.cmp(&other.0)
     }
 }
 
@@ -136,7 +113,7 @@ impl PartialOrd for IntVal {
 
 impl PartialEq for IntVal {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.get_value()
+        self.0 == other.0
     }
 }
 
@@ -144,7 +121,7 @@ impl ops::Add<IntVal> for IntVal {
     type Output = IntVal;
 
     fn add(self, rhs: IntVal) -> IntVal {
-        IntVal::new(self.value + rhs.get_value())
+        IntVal(self.0 + rhs.0)
     }
 }
 
@@ -152,7 +129,7 @@ impl ops::Sub<IntVal> for IntVal {
     type Output = IntVal;
 
     fn sub(self, rhs: IntVal) -> IntVal {
-        IntVal::new(self.value - rhs.get_value())
+        IntVal(self.0 - rhs.0)
     }
 }
 
@@ -160,7 +137,7 @@ impl ops::Mul<IntVal> for IntVal {
     type Output = IntVal;
 
     fn mul(self, rhs: IntVal) -> IntVal {
-        IntVal::new(self.value * rhs.get_value())
+        IntVal(self.0 * rhs.0)
     }
 }
 
@@ -168,14 +145,12 @@ impl ops::Div<IntVal> for IntVal {
     type Output = IntVal;
 
     fn div(self, rhs: IntVal) -> IntVal {
-        IntVal::new(self.value / rhs.get_value())
+        IntVal(self.0 / rhs.0)
     }
 }
 
 #[derive(Clone)]
-pub struct BoolVal {
-    value: bool,
-}
+pub struct BoolVal(pub bool);
 
 impl DisplayType for BoolVal {
     fn fmt_type() -> String {
@@ -183,26 +158,14 @@ impl DisplayType for BoolVal {
     }
 }
 
-impl BoolVal {
-    pub fn new(value: bool) -> BoolVal {
-        BoolVal { value }
-    }
-
-    pub fn get_value(&self) -> bool {
-        self.value
-    }
-}
-
 impl Display for BoolVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.0)
     }
 }
 
 #[derive(Clone)]
-pub struct StrVal {
-    value: String,
-}
+pub struct StrVal(pub String);
 
 impl DisplayType for StrVal {
     fn fmt_type() -> String {
@@ -210,19 +173,9 @@ impl DisplayType for StrVal {
     }
 }
 
-impl StrVal {
-    pub fn new(value: String) -> StrVal {
-        StrVal { value }
-    }
-
-    pub fn get_value(&self) -> String {
-        self.value.clone()
-    }
-}
-
 impl Display for StrVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\"{}\"", self.value)
+        write!(f, "\"{}\"", self.0)
     }
 }
 
@@ -240,7 +193,7 @@ impl<T: HeapVal + Clone> DisplayType for ListVal<T> {
 
 impl<T: HeapVal + Clone> ListVal<T> {
     pub fn get_car(&self) -> T {
-        if let &ListVal::Cons(car, cdr) = &self {
+        if let ListVal::Cons(car, _cdr) = self {
             car.clone()
         } else {
             panic!("Tried calling get_car on Null value.")
@@ -248,7 +201,7 @@ impl<T: HeapVal + Clone> ListVal<T> {
     }
 
     pub fn get_cdr(&self) -> ListVal<T> {
-        if let ListVal::Cons(car, cdr) = self {
+        if let ListVal::Cons(_car, cdr) = self {
             *cdr.clone()
         } else {
             panic!("Tried calling get_cdr on Null value.")
@@ -257,8 +210,8 @@ impl<T: HeapVal + Clone> ListVal<T> {
 
     pub fn is_null(&self) -> BoolVal {
         match self {
-            ListVal::Cons(_, _) => BoolVal::new(false),
-            ListVal::Null => BoolVal::new(true),
+            ListVal::Cons(_, _) => BoolVal(false),
+            ListVal::Null => BoolVal(true),
         }
     }
 }
@@ -326,7 +279,7 @@ impl Heap {
 }
 
 pub fn concat(a: StrVal, b: StrVal) -> StrVal {
-    let a_val = a.get_value();
-    let b_val = b.get_value();
-    StrVal::new(format!("{}{}", a_val, b_val))
+    let a_val = a.0;
+    let b_val = b.0;
+    StrVal(format!("{}{}", a_val, b_val))
 }
