@@ -3,8 +3,10 @@ use std::cmp;
 use std::fmt::Display;
 use std::ops;
 
-// TODO: consider changing this to return a Cow<'a, str>
-// see: https://stackoverflow.com/a/51332822
+// This could be optimized to avoid requiring allocating a string each time
+// fmt_type is called, but it is not a high priority.
+// Could return a Box<str>, or each implementation could require having a
+// global static &str generated, and just returning that
 pub trait DisplayType {
     fn fmt_type() -> String
     where

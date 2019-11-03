@@ -1,5 +1,5 @@
-#![feature(type_alias_impl_trait)]
-#![feature(associated_type_defaults)]
+// #![feature(type_alias_impl_trait)]
+// #![feature(associated_type_defaults)]
 
 use boilerplate::*;
 use std::fmt::Display;
@@ -26,6 +26,18 @@ impl Display for Record0 {
 
 #[derive(Clone)]
 struct Func1 {}
+
+impl DisplayType for Func1 {
+    fn fmt_type() -> String {
+        String::from("(-> (record (num : int)) int int)")
+    }
+}
+
+impl Display for Func1 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "*lambda*")
+    }
+}
 
 impl Function2<Record0, IntVal, IntVal> for Func1 {
     fn apply(&self, env: Record0, x: IntVal) -> IntVal {
@@ -76,6 +88,12 @@ fn main() {
     let int_val = IntVal(4);
     let rec_val = Record0 { num: int_val };
     println!("{}", rec_val.num);
+
+    let func = Func1 {};
+    let index = heap.alloc(Box::from(func));
+    let retrieved_val = heap.get_copy(index);
+    let downcasted = as_typ::<Func1>(retrieved_val);
+    println!("{}", downcasted);
 
     let y = IntVal(4);
     let func1 = Func1 {};
