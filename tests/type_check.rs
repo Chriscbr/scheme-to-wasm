@@ -490,6 +490,25 @@ fn test_typecheck_nested_lambdas() {
 }
 
 #[test]
+fn test_typecheck_lambdas_recursive_happy() {
+    // Not a very clean way to implement recursive functions.
+    // Currently creates a dummy function (so that the function will have a name)
+    // and then sets the name to the actual function definition, with the
+    // name available for use.
+    // Consider adding a named-lambda or fixed point operator.
+    let exp = lexpr::from_str(
+        r#"(let ((foo (lambda ((x : int)) : int 0)))
+    (set! foo (lambda ((x : int)) : int (if (< x 1) 0 (+ 1 (foo (- x 1)))))))"#,
+    )
+    .unwrap();
+    let exp = parse(&exp).unwrap();
+    assert_eq!(
+        type_check(&exp).unwrap(),
+        Type::Func(vector![Type::Int], Box::new(Type::Int))
+    );
+}
+
+#[test]
 fn test_typecheck_lambda_sad() {
     // mismatched return type
     let exp = lexpr::from_str("(lambda () : bool 3)").unwrap();

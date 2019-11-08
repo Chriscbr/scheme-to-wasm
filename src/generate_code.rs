@@ -333,7 +333,6 @@ fn generate_code_exp_null(typ: &Type) -> Result<CodeFragment, GenerateCodeError>
     })
 }
 
-// TODO: refactor each ExprKind into separate function
 pub fn generate_code_exp(exp: &Expr) -> Result<CodeFragment, GenerateCodeError> {
     match &*exp.kind {
         ExprKind::Binop(op, exp1, exp2) => generate_code_exp_binop(*op, &exp1, &exp2),
