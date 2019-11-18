@@ -1,7 +1,6 @@
 use crate::common::{generate_env_name, generate_id, generate_var_name, Expr, ExprKind, TypeEnv};
 use crate::type_check::type_check;
 use crate::types::Type;
-use crate::util::concat_vectors;
 use im_rc::{vector, Vector};
 
 #[derive(Clone, Debug)]
@@ -175,7 +174,7 @@ fn cc_fn_app(
         .iter()
         .map(|arg| cc(arg, env))
         .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
-    let new_args = concat_vectors(vector![tuple_env], cc_args);
+    let new_args = vector![tuple_env] + cc_args;
     let body = Expr::new(ExprKind::FnApp(tuple_func, new_args));
     Ok(Expr::new(ExprKind::Unpack(
         tuple_name, package, typ_var, body,
@@ -319,51 +318,42 @@ fn get_free_vars_array(exps: &Vector<Expr>) -> Result<Vector<String>, ClosureCon
     var_vecs.and_then(|vecs: Vector<Vector<String>>| {
         Ok(vecs
             .iter()
-            .fold(vector![], |vec1, vec2| concat_vectors(vec1, vec2.clone())))
+            .fold(vector![], |vec1, vec2| vec1 + vec2.clone()))
     })
 }
 
 fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
     match &*exp.kind {
-        ExprKind::Binop(_op, arg1, arg2) => get_free_vars(&arg1).and_then(|vars1| {
-            get_free_vars(&arg2).and_then(|vars2| Ok(concat_vectors(vars1, vars2)))
-        }),
+        ExprKind::Binop(_op, arg1, arg2) => get_free_vars(&arg1)
+            .and_then(|vars1| get_free_vars(&arg2).and_then(|vars2| Ok(vars1 + vars2))),
         ExprKind::If(pred, cons, alt) => get_free_vars(&pred).and_then(|vars1| {
-            get_free_vars(&cons).and_then(|vars2| {
-                get_free_vars(&alt)
-                    .and_then(|vars3| Ok(concat_vectors(concat_vectors(vars1, vars2), vars3)))
-            })
+            get_free_vars(&cons)
+                .and_then(|vars2| get_free_vars(&alt).and_then(|vars3| Ok(vars1 + vars2 + vars3)))
         }),
         ExprKind::Let(bindings, body) => {
             let binding_exps: Vector<Expr> = bindings.iter().map(|pair| pair.1.clone()).collect();
             let binding_vars: Vector<String> = bindings.iter().map(|pair| pair.0.clone()).collect();
             let mut body_vars = get_free_vars(&body)?;
             body_vars.retain(|var| !binding_vars.contains(var));
-            Ok(concat_vectors(
-                body_vars,
-                get_free_vars_array(&binding_exps)?,
-            ))
+            Ok(body_vars + get_free_vars_array(&binding_exps)?)
         }
         ExprKind::Lambda(params, _ret_type, body) => get_free_vars_lambda(&params, &body),
-        ExprKind::FnApp(func, args) => {
-            get_free_vars_array(&concat_vectors(vector![func.clone()], args.clone()))
-        }
+        ExprKind::FnApp(func, args) => get_free_vars_array(&(vector![func.clone()] + args.clone())),
         ExprKind::Record(bindings) => {
             get_free_vars_array(&bindings.iter().map(|pair| pair.1.clone()).collect())
         }
         ExprKind::RecordGet(record, _key) => get_free_vars(&record),
         ExprKind::Begin(exps) => get_free_vars_array(&exps),
         ExprKind::Set(_var, val) => get_free_vars(&val),
-        ExprKind::Cons(first, second) => get_free_vars(&first).and_then(|vars1| {
-            get_free_vars(&second).and_then(|vars2| Ok(concat_vectors(vars1, vars2)))
-        }),
+        ExprKind::Cons(first, second) => get_free_vars(&first)
+            .and_then(|vars1| get_free_vars(&second).and_then(|vars2| Ok(vars1 + vars2))),
         ExprKind::Car(val) => get_free_vars(&val),
         ExprKind::Cdr(val) => get_free_vars(&val),
         ExprKind::Tuple(vals) => get_free_vars_array(&vals),
         ExprKind::TupleGet(tuple, _key) => get_free_vars(&tuple),
         ExprKind::Pack(val, _sub, _exist) => get_free_vars(&val),
         ExprKind::Unpack(var, package, _typ_sub, body) => {
-            let mut free_vars = concat_vectors(get_free_vars(&package)?, get_free_vars(&body)?);
+            let mut free_vars = get_free_vars(&package)? + get_free_vars(&body)?;
             free_vars.retain(|free_var| free_var != var);
             Ok(free_vars)
         }
