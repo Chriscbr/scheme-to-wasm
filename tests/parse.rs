@@ -1,6 +1,6 @@
 use im_rc::vector;
-use scheme_to_rust::parse::parse_type;
-use scheme_to_rust::types::Type;
+use scheme_to_wasm::parse::parse_type;
+use scheme_to_wasm::types::Type;
 
 #[test]
 fn test_parse_type_primitives() {

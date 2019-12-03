@@ -1,5 +1,5 @@
 [package]
-name = "scheme-to-rust"
+name = "scheme-to-wasm"
 version = "0.1.0"
 authors = ["Chriscbr <crybicki98@gmail.com>"]
 edition = "2018"
@@ -9,8 +9,8 @@ edition = "2018"
 [dependencies]
 lexpr = "0.2.3"
 im-rc = "13.0.0"
-proc-macro2 = "1.0.6"
-quote = "1.0.2"
+parity-wasm = "0.41"
+wasmer-runtime = "0.11.0" # TODO: move to dev-dependencies
 
 [dev-dependencies]
 serial_test = "0.2.0"

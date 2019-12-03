@@ -1,7 +1,7 @@
-use scheme_to_rust::closure_convert::closure_convert;
-use scheme_to_rust::common::dangerously_reset_gensym_count;
-use scheme_to_rust::parse::parse;
-use scheme_to_rust::type_check::type_check;
+use scheme_to_wasm::closure_convert::closure_convert;
+use scheme_to_wasm::common::dangerously_reset_gensym_count;
+use scheme_to_wasm::parse::parse;
+use scheme_to_wasm::type_check::type_check;
 use serial_test_derive::serial;
 
 #[test]

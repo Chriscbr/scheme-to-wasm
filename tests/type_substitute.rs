@@ -1,6 +1,6 @@
 use im_rc::vector;
-use scheme_to_rust::parse::parse_type;
-use scheme_to_rust::types::{type_var_substitute, Type};
+use scheme_to_wasm::parse::parse_type;
+use scheme_to_wasm::types::{type_var_substitute, Type};
 
 #[test]
 fn test_type_var_substitute_idempotent() {
