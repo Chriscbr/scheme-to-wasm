@@ -352,7 +352,7 @@ fn tc_unpack_with_env(
         type_var_substitute(&package_base_typ, package_typ_var, &Type::TypeVar(typ_var));
     let body_typ = tc_with_env(
         body,
-        &env.add_binding((String::from(var), spackage_base_typ.clone())),
+        &env.add_binding((String::from(var), spackage_base_typ)),
     )?;
     if type_contains_var(&body_typ, typ_var) {
         return Err(TypeCheckError::from(

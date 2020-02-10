@@ -38,7 +38,7 @@ fn cc_type(typ: &Type) -> Result<Type, ClosureConvertError> {
             cc_in_typs.push_front(typ_var.clone());
             let base_typ = Type::Tuple(vector![
                 Type::Func(cc_in_typs, Box::new(cc_ret_typ),),
-                typ_var.clone()
+                typ_var
             ]);
             Ok(Type::Exists(typ_var_id, Box::new(base_typ)))
         }
@@ -137,16 +137,12 @@ fn cc_lambda(
         .cloned()
         .map(|pair| Ok((pair.0.clone(), cc_type(&pair.1)?)))
         .collect::<Result<Vector<(String, Type)>, ClosureConvertError>>()?;
-    let record_typ = Type::Record(free_var_types.clone());
-    new_params.push_front((env_name.clone(), record_typ.clone()));
+    let record_typ = Type::Record(free_var_types);
+    new_params.push_front((env_name, record_typ.clone()));
 
     let new_ret_typ = cc_type(&ret_type.clone())?;
 
-    let new_lambda = Expr::new(ExprKind::Lambda(
-        new_params.clone(),
-        new_ret_typ.clone(),
-        new_body,
-    ));
+    let new_lambda = Expr::new(ExprKind::Lambda(new_params, new_ret_typ, new_body));
 
     let orig_param_typs = params.clone().iter().map(|pair| pair.1.clone()).collect();
     let new_lambda_typ = cc_type(&Type::Func(orig_param_typs, Box::new(ret_type.clone())))?;
@@ -154,7 +150,7 @@ fn cc_lambda(
     let new_closure = Expr::new(ExprKind::Tuple(vector![new_lambda, new_env]));
     Ok(Expr::new(ExprKind::Pack(
         new_closure,
-        record_typ.clone(),
+        record_typ,
         new_lambda_typ,
     )))
 }
