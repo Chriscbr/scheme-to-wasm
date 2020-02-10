@@ -58,6 +58,7 @@ impl Expr {
 }
 
 // TODO: add (not x) operator
+// TODO: add (string-equal? x y) operator
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprKind {

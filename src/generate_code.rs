@@ -7,7 +7,7 @@ use crate::common::{BinOp, Expr, ExprKind};
 use crate::types::Type;
 
 use parity_wasm::builder;
-use parity_wasm::elements::{Instruction, Instructions, Module, ValueType};
+use parity_wasm::elements::{BlockType, Instruction, Instructions, Module, ValueType};
 
 #[derive(Clone, Debug)]
 pub struct CodeGenerateError(String);
@@ -53,32 +53,65 @@ fn gen_instr_binop(
             let arg2_instr = gen_instr(arg2)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64DivS]].concat())
         }
-        // BinOp::Add | BinOp::Subtract | BinOp::Multiply | BinOp::Divide => {
-        //     arg1_expect_typ = Type::Int;
-        //     arg2_expect_typ = Type::Int;
-        //     ret_typ = Type::Int;
-        // }
-        // BinOp::LessThan
-        // | BinOp::GreaterThan
-        // | BinOp::LessOrEqual
-        // | BinOp::GreaterOrEqual
-        // | BinOp::EqualTo => {
-        //     arg1_expect_typ = Type::Int;
-        //     arg2_expect_typ = Type::Int;
-        //     ret_typ = Type::Bool;
-        // }
-        // BinOp::And | BinOp::Or => {
-        //     arg1_expect_typ = Type::Bool;
-        //     arg2_expect_typ = Type::Bool;
-        //     ret_typ = Type::Bool;
-        // }
-        // BinOp::Concat => {
-        //     arg1_expect_typ = Type::Str;
-        //     arg2_expect_typ = Type::Str;
-        //     ret_typ = Type::Str;
-        // }
-        _ => Err(CodeGenerateError::from("Unhandled binop.")),
+        BinOp::LessThan => {
+            let arg1_instr = gen_instr(arg1)?;
+            let arg2_instr = gen_instr(arg2)?;
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I64LtS]].concat())
+        }
+        BinOp::GreaterThan => {
+            let arg1_instr = gen_instr(arg1)?;
+            let arg2_instr = gen_instr(arg2)?;
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I64GtS]].concat())
+        }
+        BinOp::LessOrEqual => {
+            let arg1_instr = gen_instr(arg1)?;
+            let arg2_instr = gen_instr(arg2)?;
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I64LeS]].concat())
+        }
+        BinOp::GreaterOrEqual => {
+            let arg1_instr = gen_instr(arg1)?;
+            let arg2_instr = gen_instr(arg2)?;
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I64GeS]].concat())
+        }
+        BinOp::EqualTo => {
+            let arg1_instr = gen_instr(arg1)?;
+            let arg2_instr = gen_instr(arg2)?;
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I64Eq]].concat())
+        }
+        BinOp::And => {
+            let arg1_instr = gen_instr(arg1)?;
+            let arg2_instr = gen_instr(arg2)?;
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I64And]].concat())
+        }
+        BinOp::Or => {
+            let arg1_instr = gen_instr(arg1)?;
+            let arg2_instr = gen_instr(arg2)?;
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I64Or]].concat())
+        }
+        BinOp::Concat => Err(CodeGenerateError::from("Unhandled binop: concat.")),
     }
+}
+
+fn gen_instr_if(
+    pred: &Expr,
+    cons: &Expr,
+    alt: &Expr,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let pred_instr = gen_instr(pred)?;
+    let cons_instr = gen_instr(cons)?;
+    let alt_instr = gen_instr(alt)?;
+
+    // TODO: remove hardcoded block type
+    let block_type = BlockType::Value(ValueType::I64);
+    Ok([
+        pred_instr,
+        vec![Instruction::If(block_type)],
+        cons_instr,
+        vec![Instruction::Else],
+        alt_instr,
+        vec![Instruction::End],
+    ]
+    .concat())
 }
 
 fn gen_instr(exp: &Expr) -> Result<Vec<Instruction>, CodeGenerateError> {
@@ -94,7 +127,7 @@ fn gen_instr(exp: &Expr) -> Result<Vec<Instruction>, CodeGenerateError> {
         //     ))),
         // },
         ExprKind::Binop(op, arg1, arg2) => Ok(gen_instr_binop(*op, &arg1, &arg2)?),
-        // ExprKind::If(pred, cons, alt) => tc_if_with_env(&pred, &cons, &alt, env),
+        ExprKind::If(pred, cons, alt) => Ok(gen_instr_if(&pred, &cons, &alt)?),
         // ExprKind::Let(bindings, body) => tc_let_with_env(&bindings, &body, env),
         // ExprKind::Lambda(params, ret_typ, body) => {
         //     tc_lambda_with_env(&params, &ret_typ, &body, env)
@@ -117,7 +150,7 @@ fn gen_instr(exp: &Expr) -> Result<Vec<Instruction>, CodeGenerateError> {
         // ExprKind::FnApp(func, args) => tc_apply_with_env(&func, &args, env),
         _ => Err(CodeGenerateError::from("Unhandled expression kind.")),
     };
-    Ok(instructions.unwrap())
+    Ok(instructions?)
 }
 
 fn construct_module(
@@ -167,7 +200,7 @@ mod tests {
     use wasmer_runtime::{imports, instantiate, Value};
 
     #[test]
-    fn test_generate_basic_math() {
+    fn test_basic_math() {
         let exp = parse(&lexpr::from_str("(* (+ 3 5) (- 4 2))").unwrap()).unwrap();
         let instructions = gen_instr(&exp).unwrap();
         let module = construct_module("main", vec![], Type::Int, Instructions::new(instructions));
@@ -187,7 +220,27 @@ mod tests {
     }
 
     #[test]
-    fn test_add_one() {
+    fn test_basic_control() {
+        let exp = parse(&lexpr::from_str("(if (< 5 3) 10 20)").unwrap()).unwrap();
+        let instructions = gen_instr(&exp).unwrap();
+        let module = construct_module("main", vec![], Type::Int, Instructions::new(instructions));
+        let binary = parity_wasm::serialize(module.clone()).unwrap();
+        // output to file for debugging
+        parity_wasm::serialize_to_file(
+            std::env::current_dir().unwrap().join("basic_control.wasm"),
+            module,
+        )
+        .unwrap();
+
+        let import_object = imports! {};
+        let instance = instantiate(&binary, &import_object).unwrap();
+        let values = instance.dyn_func("main").unwrap().call(&[]).unwrap();
+
+        assert_eq!(values[0], Value::I64(20));
+    }
+
+    #[test]
+    fn test_handwritten_add_one() {
         let module = builder::module()
             .function()
             .signature()
@@ -233,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn test_basic_math() {
+    fn test_handwritten_basic_control() {
         let module = builder::module()
             .function()
             .signature()
@@ -241,13 +294,14 @@ mod tests {
             .build()
             .body()
             .with_instructions(Instructions::new(vec![
-                Instruction::I64Const(3),
                 Instruction::I64Const(5),
-                Instruction::I64Add,
-                Instruction::I64Const(4),
-                Instruction::I64Const(2),
-                Instruction::I64Sub,
-                Instruction::I64Mul,
+                Instruction::I64Const(5),
+                Instruction::I64LtS,
+                Instruction::If(BlockType::Value(ValueType::I64)),
+                Instruction::I64Const(10),
+                Instruction::Else,
+                Instruction::I64Const(20),
+                Instruction::End,
                 Instruction::End,
             ]))
             .build()
@@ -265,7 +319,7 @@ mod tests {
         parity_wasm::serialize_to_file(
             std::env::current_dir()
                 .unwrap()
-                .join("handwritten_basic_math.wasm"),
+                .join("handwritten_basic_control.wasm"),
             module,
         )
         .unwrap();
@@ -274,6 +328,6 @@ mod tests {
         let instance = instantiate(&output, &import_object).unwrap();
         let values = instance.dyn_func("main").unwrap().call(&[]).unwrap();
 
-        assert_eq!(values[0], Value::I64(16));
+        assert_eq!(values[0], Value::I64(20));
     }
 }
