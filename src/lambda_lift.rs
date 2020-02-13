@@ -33,13 +33,13 @@ fn ll(exp: &Expr, fns: &mut Vector<(String, Expr)>) -> Result<Expr, LambdaLiftEr
         ExprKind::Binop(op, exp1, exp2) => {
             let lexp1 = ll(&exp1, fns)?;
             let lexp2 = ll(&exp2, fns)?;
-            Ok(Expr::new(ExprKind::Binop(*op, lexp1, lexp2)))
+            Ok(Expr::new(None, ExprKind::Binop(*op, lexp1, lexp2)))
         }
         ExprKind::If(pred, cons, alt) => {
             let lpred = ll(&pred, fns)?;
             let lcons = ll(&cons, fns)?;
             let lalt = ll(&alt, fns)?;
-            Ok(Expr::new(ExprKind::If(lpred, lcons, lalt)))
+            Ok(Expr::new(None, ExprKind::If(lpred, lcons, lalt)))
         }
         ExprKind::Let(bindings, body) => {
             let lbindings = bindings
@@ -50,19 +50,22 @@ fn ll(exp: &Expr, fns: &mut Vector<(String, Expr)>) -> Result<Expr, LambdaLiftEr
                 })
                 .collect::<Result<Vector<(String, Expr)>, LambdaLiftError>>()?;
             let lbody = ll(&body, fns)?;
-            Ok(Expr::new(ExprKind::Let(lbindings, lbody)))
+            Ok(Expr::new(None, ExprKind::Let(lbindings, lbody)))
         }
         ExprKind::Lambda(params, ret_typ, body) => {
             let lbody = ll(body, fns)?;
-            let new_lambda = Expr::new(ExprKind::Lambda(params.clone(), ret_typ.clone(), lbody));
+            let new_lambda = Expr::new(
+                None,
+                ExprKind::Lambda(params.clone(), ret_typ.clone(), lbody),
+            );
             let func_name = generate_func_name();
             fns.push_back((func_name.clone(), new_lambda));
-            Ok(Expr::new(ExprKind::Id(func_name)))
+            Ok(Expr::new(None, ExprKind::Id(func_name)))
         }
         ExprKind::FnApp(func, args) => {
             let lfunc = ll(&func, fns)?;
             let largs = ll_array(&args, fns)?;
-            Ok(Expr::new(ExprKind::FnApp(lfunc, largs)))
+            Ok(Expr::new(None, ExprKind::FnApp(lfunc, largs)))
         }
         ExprKind::Record(bindings) => {
             let lbindings = bindings
@@ -72,59 +75,60 @@ fn ll(exp: &Expr, fns: &mut Vector<(String, Expr)>) -> Result<Expr, LambdaLiftEr
                     Ok((binding.0.clone(), lexp))
                 })
                 .collect::<Result<Vector<(String, Expr)>, LambdaLiftError>>()?;
-            Ok(Expr::new(ExprKind::Record(lbindings)))
+            Ok(Expr::new(None, ExprKind::Record(lbindings)))
         }
         ExprKind::RecordGet(record, key) => {
             let lrecord = ll(&record, fns)?;
-            Ok(Expr::new(ExprKind::RecordGet(lrecord, key.clone())))
+            Ok(Expr::new(None, ExprKind::RecordGet(lrecord, key.clone())))
         }
         ExprKind::Begin(exps) => {
             let lexps = ll_array(&exps, fns)?;
-            Ok(Expr::new(ExprKind::Begin(lexps)))
+            Ok(Expr::new(None, ExprKind::Begin(lexps)))
         }
         ExprKind::Set(var_name, exp) => {
             let lexp = ll(&exp, fns)?;
-            Ok(Expr::new(ExprKind::Set(var_name.clone(), lexp)))
+            Ok(Expr::new(None, ExprKind::Set(var_name.clone(), lexp)))
         }
         ExprKind::Cons(first, second) => {
             let lfirst = ll(&first, fns)?;
             let lsecond = ll(&second, fns)?;
-            Ok(Expr::new(ExprKind::Cons(lfirst, lsecond)))
+            Ok(Expr::new(None, ExprKind::Cons(lfirst, lsecond)))
         }
         ExprKind::Car(exp) => {
             let lexp = ll(&exp, fns)?;
-            Ok(Expr::new(ExprKind::Car(lexp)))
+            Ok(Expr::new(None, ExprKind::Car(lexp)))
         }
         ExprKind::Cdr(exp) => {
             let lexp = ll(&exp, fns)?;
-            Ok(Expr::new(ExprKind::Cdr(lexp)))
+            Ok(Expr::new(None, ExprKind::Cdr(lexp)))
         }
         ExprKind::IsNull(exp) => {
             let lexp = ll(&exp, fns)?;
-            Ok(Expr::new(ExprKind::IsNull(lexp)))
+            Ok(Expr::new(None, ExprKind::IsNull(lexp)))
         }
         ExprKind::Null(_typ) => Ok(exp.clone()),
         ExprKind::Tuple(exps) => {
             let lexps = ll_array(&exps, fns)?;
-            Ok(Expr::new(ExprKind::Tuple(lexps)))
+            Ok(Expr::new(None, ExprKind::Tuple(lexps)))
         }
         ExprKind::TupleGet(tup, key) => {
             let ltup = ll(&tup, fns)?;
-            Ok(Expr::new(ExprKind::TupleGet(ltup, *key)))
+            Ok(Expr::new(None, ExprKind::TupleGet(ltup, *key)))
         }
         ExprKind::Pack(val, sub, exist) => {
             let lval = ll(&val, fns)?;
-            Ok(Expr::new(ExprKind::Pack(lval, sub.clone(), exist.clone())))
+            Ok(Expr::new(
+                None,
+                ExprKind::Pack(lval, sub.clone(), exist.clone()),
+            ))
         }
         ExprKind::Unpack(var, package, typ_sub, body) => {
             let lpackage = ll(&package, fns)?;
             let lbody = ll(&body, fns)?;
-            Ok(Expr::new(ExprKind::Unpack(
-                var.clone(),
-                lpackage,
-                *typ_sub,
-                lbody,
-            )))
+            Ok(Expr::new(
+                None,
+                ExprKind::Unpack(var.clone(), lpackage, *typ_sub, lbody),
+            ))
         }
         ExprKind::Id(_) => Ok(exp.clone()),
         ExprKind::Num(_) => Ok(exp.clone()),

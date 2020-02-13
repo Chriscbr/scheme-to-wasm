@@ -44,14 +44,14 @@ pub fn dangerously_reset_gensym_count() {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expr {
-    pub checked_type: Type,
+    pub checked_type: Option<Type>,
     pub kind: Box<ExprKind>,
 }
 
 impl Expr {
-    pub fn new(kind: ExprKind) -> Expr {
+    pub fn new(typ: Option<Type>, kind: ExprKind) -> Expr {
         Expr {
-            checked_type: Type::Unknown,
+            checked_type: typ,
             kind: Box::new(kind),
         }
     }
@@ -217,6 +217,12 @@ impl<T: Clone> TypeEnv<T> {
             }
         }
         None
+    }
+}
+
+impl<T: Clone> From<Vector<(String, T)>> for TypeEnv<T> {
+    fn from(bindings: Vector<(String, T)>) -> Self {
+        TypeEnv { bindings }
     }
 }
 
