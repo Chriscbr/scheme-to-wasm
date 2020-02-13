@@ -143,19 +143,31 @@ fn tc_let_with_env(
     body: &Expr,
     env: &TypeEnv<Type>,
 ) -> Result<Expr, TypeCheckError> {
-    let type_bindings: Vector<(String, Type)> = bindings
+    let typed_bindings: Vector<(String, Expr)> = bindings
+        .iter()
+        .map(|pair| Ok((pair.0.clone(), tc_with_env(&pair.1, env)?)))
+        .collect::<Result<Vector<(String, Expr)>, TypeCheckError>>()?;
+    let binding_types: Vector<(String, Type)> = typed_bindings
         .iter()
         .map(|pair| {
             Ok((
                 pair.0.clone(),
-                tc_with_env(&pair.1, env)?.checked_type.ok_or_else(|| {
+                pair.1.checked_type.clone().ok_or_else(|| {
                     TypeCheckError::from("Type binding does not have type annotation.")
                 })?,
             ))
         })
         .collect::<Result<Vector<(String, Type)>, TypeCheckError>>()?;
-    let new_env = env.add_bindings(type_bindings);
-    tc_with_env(body, &new_env)
+    let new_env = env.add_bindings(binding_types);
+    let typed_body = tc_with_env(body, &new_env)?;
+    let body_typ = typed_body
+        .checked_type
+        .clone()
+        .ok_or_else(|| TypeCheckError::from("Body does not have type annotation."))?;
+    Ok(Expr::new(
+        Some(body_typ),
+        ExprKind::Let(typed_bindings, typed_body),
+    ))
 }
 
 fn tc_lambda_with_env(

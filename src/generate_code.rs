@@ -6,8 +6,13 @@
 use crate::common::{BinOp, Expr, ExprKind};
 use crate::types::Type;
 
+use std::collections::BTreeMap;
+
+use im_rc::Vector;
 use parity_wasm::builder;
-use parity_wasm::elements::{BlockType, Instruction, Instructions, Module, ValueType};
+use parity_wasm::elements::{BlockType, Instruction, Instructions, Local, Module, ValueType};
+
+type LocalsMap<'a> = BTreeMap<String, (u32, ValueType)>;
 
 #[derive(Clone, Debug)]
 pub struct CodeGenerateError(String);
@@ -27,65 +32,81 @@ impl std::fmt::Display for CodeGenerateError {
     }
 }
 
+fn convert_to_wasm_type(typ: Type) -> ValueType {
+    match typ {
+        Type::Int => ValueType::I64,
+        Type::Bool => ValueType::I32,
+        Type::Str => panic!("Unhandled type: str"),
+        Type::List(_x) => panic!("Unhandled type: list"),
+        Type::Func(_typs, _ret_typ) => panic!("Unhandled type: func"),
+        Type::Tuple(_typs) => panic!("Unhandled type: tuple"),
+        Type::Record(_fields) => panic!("Unhandled type: record"),
+        Type::Exists(_bound_var, _inner_typ) => panic!("Unhandled type: existential type"),
+        Type::TypeVar(_x) => panic!("Unhandled type: type var"),
+        Type::Unknown => panic!("Unhandled type: unknown"),
+    }
+}
+
 fn gen_instr_binop(
     op: BinOp,
     arg1: &Expr,
     arg2: &Expr,
+    locals: &mut LocalsMap,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     match op {
         BinOp::Add => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64Add]].concat())
         }
         BinOp::Subtract => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64Sub]].concat())
         }
         BinOp::Multiply => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64Mul]].concat())
         }
         BinOp::Divide => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64DivS]].concat())
         }
         BinOp::LessThan => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64LtS]].concat())
         }
         BinOp::GreaterThan => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64GtS]].concat())
         }
         BinOp::LessOrEqual => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64LeS]].concat())
         }
         BinOp::GreaterOrEqual => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64GeS]].concat())
         }
         BinOp::EqualTo => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64Eq]].concat())
         }
         BinOp::And => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64And]].concat())
         }
         BinOp::Or => {
-            let arg1_instr = gen_instr(arg1)?;
-            let arg2_instr = gen_instr(arg2)?;
+            let arg1_instr = gen_instr(arg1, locals)?;
+            let arg2_instr = gen_instr(arg2, locals)?;
             Ok([arg1_instr, arg2_instr, vec![Instruction::I64Or]].concat())
         }
         BinOp::Concat => Err(CodeGenerateError::from("Unhandled binop: concat.")),
@@ -96,10 +117,11 @@ fn gen_instr_if(
     pred: &Expr,
     cons: &Expr,
     alt: &Expr,
+    locals: &mut LocalsMap,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
-    let pred_instr = gen_instr(pred)?;
-    let cons_instr = gen_instr(cons)?;
-    let alt_instr = gen_instr(alt)?;
+    let pred_instr = gen_instr(pred, locals)?;
+    let cons_instr = gen_instr(cons, locals)?;
+    let alt_instr = gen_instr(alt, locals)?;
 
     // TODO: remove hardcoded block type
     let block_type = BlockType::Value(ValueType::I64);
@@ -114,11 +136,49 @@ fn gen_instr_if(
     .concat())
 }
 
-fn gen_instr(exp: &Expr) -> Result<Vec<Instruction>, CodeGenerateError> {
+fn gen_instr_let(
+    bindings: &Vector<(String, Expr)>,
+    body: &Expr,
+    locals: &mut LocalsMap,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let mut let_instr: Vec<Instruction> = vec![];
+    for pair in bindings {
+        let local_index = locals.len() as u32;
+        let exp_type =
+            pair.1.checked_type.clone().ok_or_else(|| {
+                CodeGenerateError::from("Expression does not have type annotation.")
+            })?;
+        let mut exp_instr = gen_instr(&pair.1, locals)?;
+        let wasm_type = convert_to_wasm_type(exp_type);
+        locals.insert(pair.0.clone(), (local_index, wasm_type));
+        let_instr.append(&mut exp_instr);
+        let_instr.push(Instruction::SetLocal(local_index));
+    }
+    // let body_type = body
+    //     .checked_type
+    //     .clone()
+    //     .ok_or_else(|| CodeGenerateError::from("Body does not have type annotation."))?;
+    // let body_type_wasm = convert_to_wasm_type(body_type);
+    let body_instr = gen_instr(body, locals)?;
+
+    // let block_type = BlockType::Value(body_type_wasm);
+    Ok([let_instr, body_instr].concat())
+}
+
+pub fn gen_instr(
+    exp: &Expr,
+    locals: &mut LocalsMap,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
     let instructions: Result<Vec<Instruction>, CodeGenerateError> = match &*exp.kind {
         ExprKind::Num(x) => Ok(vec![Instruction::I64Const(*x)]),
         ExprKind::Bool(x) => Ok(vec![Instruction::I64Const(*x as i64)]),
         // ExprKind::Str(_) => Ok(Type::Str),
+        ExprKind::Id(sym) => {
+            let local_idx = locals
+                .get(sym)
+                .ok_or_else(|| CodeGenerateError::from("Symbol not found in LocalsMap."))?;
+            Ok(vec![Instruction::GetLocal(local_idx.0)])
+        }
         // ExprKind::Id(sym) => match env.find(sym.as_str()) {
         //     Some(val) => Ok(val.clone()),
         //     None => Err(TypeCheckError(format!(
@@ -126,9 +186,9 @@ fn gen_instr(exp: &Expr) -> Result<Vec<Instruction>, CodeGenerateError> {
         //         sym
         //     ))),
         // },
-        ExprKind::Binop(op, arg1, arg2) => Ok(gen_instr_binop(*op, &arg1, &arg2)?),
-        ExprKind::If(pred, cons, alt) => Ok(gen_instr_if(&pred, &cons, &alt)?),
-        // ExprKind::Let(bindings, body) => tc_let_with_env(&bindings, &body, env),
+        ExprKind::Binop(op, arg1, arg2) => Ok(gen_instr_binop(*op, &arg1, &arg2, locals)?),
+        ExprKind::If(pred, cons, alt) => Ok(gen_instr_if(&pred, &cons, &alt, locals)?),
+        ExprKind::Let(bindings, body) => Ok(gen_instr_let(&bindings, &body, locals)?),
         // ExprKind::Lambda(params, ret_typ, body) => {
         //     tc_lambda_with_env(&params, &ret_typ, &body, env)
         // }
@@ -153,8 +213,9 @@ fn gen_instr(exp: &Expr) -> Result<Vec<Instruction>, CodeGenerateError> {
     Ok(instructions?)
 }
 
-fn construct_module(
+pub fn construct_module(
     name: &str,
+    locals: LocalsMap,
     param_types: Vec<Type>,
     ret_type: Type,
     mut instructions: Instructions,
@@ -172,6 +233,15 @@ fn construct_module(
         })
         .collect::<Vec<ValueType>>();
 
+    let mut wasm_locals = locals
+        .iter()
+        .map(|(_sym, idx_typ_pair)| *idx_typ_pair)
+        .collect::<Vec<(u32, ValueType)>>();
+    wasm_locals.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    let wasm_locals = wasm_locals
+        .iter()
+        .map(|(_index, typ)| Local::new(1, *typ))
+        .collect::<Vec<Local>>();
     instructions.elements_mut().push(Instruction::End);
 
     builder::module()
@@ -181,6 +251,7 @@ fn construct_module(
         .with_return_type(Some(wasm_ret_type))
         .build()
         .body()
+        .with_locals(wasm_locals)
         .with_instructions(instructions)
         .build()
         .build()
@@ -190,144 +261,4 @@ fn construct_module(
         .func(0)
         .build()
         .build()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::parse::parse;
-
-    use wasmer_runtime::{imports, instantiate, Value};
-
-    #[test]
-    fn test_basic_math() {
-        let exp = parse(&lexpr::from_str("(* (+ 3 5) (- 4 2))").unwrap()).unwrap();
-        let instructions = gen_instr(&exp).unwrap();
-        let module = construct_module("main", vec![], Type::Int, Instructions::new(instructions));
-        let binary = parity_wasm::serialize(module.clone()).unwrap();
-        // output to file for debugging
-        parity_wasm::serialize_to_file(
-            std::env::current_dir().unwrap().join("basic_math.wasm"),
-            module,
-        )
-        .unwrap();
-
-        let import_object = imports! {};
-        let instance = instantiate(&binary, &import_object).unwrap();
-        let values = instance.dyn_func("main").unwrap().call(&[]).unwrap();
-
-        assert_eq!(values[0], Value::I64(16));
-    }
-
-    #[test]
-    fn test_basic_control() {
-        let exp = parse(&lexpr::from_str("(if (< 5 3) 10 20)").unwrap()).unwrap();
-        let instructions = gen_instr(&exp).unwrap();
-        let module = construct_module("main", vec![], Type::Int, Instructions::new(instructions));
-        let binary = parity_wasm::serialize(module.clone()).unwrap();
-        // output to file for debugging
-        parity_wasm::serialize_to_file(
-            std::env::current_dir().unwrap().join("basic_control.wasm"),
-            module,
-        )
-        .unwrap();
-
-        let import_object = imports! {};
-        let instance = instantiate(&binary, &import_object).unwrap();
-        let values = instance.dyn_func("main").unwrap().call(&[]).unwrap();
-
-        assert_eq!(values[0], Value::I64(20));
-    }
-
-    #[test]
-    fn test_handwritten_add_one() {
-        let module = builder::module()
-            .function()
-            .signature()
-            .with_param(ValueType::I64)
-            .with_return_type(Some(ValueType::I64))
-            .build()
-            .body()
-            .with_instructions(Instructions::new(vec![
-                Instruction::GetLocal(0),
-                Instruction::I64Const(1),
-                Instruction::I64Add,
-                Instruction::End,
-            ]))
-            .build()
-            .build()
-            .export()
-            .field("add_one")
-            .internal()
-            .func(0)
-            .build()
-            .build();
-
-        let output = parity_wasm::serialize(module.clone()).unwrap();
-
-        // Can output to a file for debugging/decompiling if necessary.
-        parity_wasm::serialize_to_file(
-            std::env::current_dir()
-                .unwrap()
-                .join("handwritten_add_one.wasm"),
-            module,
-        )
-        .unwrap();
-
-        let import_object = imports! {};
-        let instance = instantiate(&output, &import_object).unwrap();
-        let values = instance
-            .dyn_func("add_one")
-            .unwrap()
-            .call(&[Value::I64(42)])
-            .unwrap();
-
-        assert_eq!(values[0], Value::I64(43));
-    }
-
-    #[test]
-    fn test_handwritten_basic_control() {
-        let module = builder::module()
-            .function()
-            .signature()
-            .with_return_type(Some(ValueType::I64))
-            .build()
-            .body()
-            .with_instructions(Instructions::new(vec![
-                Instruction::I64Const(5),
-                Instruction::I64Const(5),
-                Instruction::I64LtS,
-                Instruction::If(BlockType::Value(ValueType::I64)),
-                Instruction::I64Const(10),
-                Instruction::Else,
-                Instruction::I64Const(20),
-                Instruction::End,
-                Instruction::End,
-            ]))
-            .build()
-            .build()
-            .export()
-            .field("main")
-            .internal()
-            .func(0)
-            .build()
-            .build();
-
-        let output = parity_wasm::serialize(module.clone()).unwrap();
-
-        // Can output to a file for debugging/decompiling if necessary.
-        parity_wasm::serialize_to_file(
-            std::env::current_dir()
-                .unwrap()
-                .join("handwritten_basic_control.wasm"),
-            module,
-        )
-        .unwrap();
-
-        let import_object = imports! {};
-        let instance = instantiate(&output, &import_object).unwrap();
-        let values = instance.dyn_func("main").unwrap().call(&[]).unwrap();
-
-        assert_eq!(values[0], Value::I64(20));
-    }
 }
