@@ -217,17 +217,11 @@ pub fn construct_module(
     ret_type: Type,
     mut instructions: Instructions,
 ) -> Module {
-    let wasm_ret_type = match ret_type {
-        Type::Int => ValueType::I64,
-        _ => panic!("Unhandled return type."),
-    };
+    let wasm_ret_type = convert_to_wasm_type(ret_type);
 
     let wasm_param_types = param_types
         .iter()
-        .map(|typ| match typ {
-            Type::Int => ValueType::I64,
-            _ => panic!("Unhandled parameter type."),
-        })
+        .map(|typ| convert_to_wasm_type(typ.clone()))
         .collect::<Vec<ValueType>>();
 
     let mut wasm_locals = locals
