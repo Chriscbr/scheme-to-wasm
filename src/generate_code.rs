@@ -123,8 +123,12 @@ fn gen_instr_if(
     let cons_instr = gen_instr(cons, locals)?;
     let alt_instr = gen_instr(alt, locals)?;
 
-    // TODO: remove hardcoded block type
-    let block_type = BlockType::Value(ValueType::I64);
+    let cons_type = cons
+        .checked_type
+        .clone()
+        .ok_or_else(|| CodeGenerateError::from("Expression does not have type annotation."))?;
+
+    let block_type = BlockType::Value(convert_to_wasm_type(cons_type));
     Ok([
         pred_instr,
         vec![Instruction::If(block_type)],
@@ -179,13 +183,6 @@ pub fn gen_instr(
                 .ok_or_else(|| CodeGenerateError::from("Symbol not found in LocalsMap."))?;
             Ok(vec![Instruction::GetLocal(local_idx.0)])
         }
-        // ExprKind::Id(sym) => match env.find(sym.as_str()) {
-        //     Some(val) => Ok(val.clone()),
-        //     None => Err(TypeCheckError(format!(
-        //         "Not a recognized function name: {}.",
-        //         sym
-        //     ))),
-        // },
         ExprKind::Binop(op, arg1, arg2) => Ok(gen_instr_binop(*op, &arg1, &arg2, locals)?),
         ExprKind::If(pred, cons, alt) => Ok(gen_instr_if(&pred, &cons, &alt, locals)?),
         ExprKind::Let(bindings, body) => Ok(gen_instr_let(&bindings, &body, locals)?),
