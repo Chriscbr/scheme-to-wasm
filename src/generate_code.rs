@@ -13,6 +13,13 @@ use im_rc::Vector;
 use parity_wasm::builder;
 use parity_wasm::elements::{BlockType, Instruction, Instructions, Local, Module, ValueType};
 
+/// A key-value map for finding the WebAssembly type and index associated
+/// with a local variable in the WebAssembly.
+///
+/// Ex. when compiling `(let ((a 3)) (+ a 3))`, the value of `a` will be
+/// stored in a local variable within the WebAssembly function, and the index
+/// needs to be tracked so that it can be provided to the WebAssembly
+/// local.get function when `a` is referenced within the body.
 type LocalsMap = BTreeMap<String, (u32, ValueType)>;
 
 #[derive(Clone, Debug)]
@@ -48,29 +55,39 @@ impl CodeGenerateState {
     }
 }
 
-fn convert_to_wasm_type(typ: &Type) -> ValueType {
-    match typ {
-        Type::Int => ValueType::I64,
-        Type::Bool => ValueType::I32,
-        Type::Str => panic!("Unhandled type: str"),
-        Type::List(_x) => panic!("Unhandled type: list"),
-        Type::Func(_typs, _ret_typ) => panic!("Unhandled type: func"),
-        Type::Tuple(_typs) => ValueType::I32, // index into linear memory
-        Type::Record(_fields) => panic!("Unhandled type: record"),
-        Type::Exists(_bound_var, _inner_typ) => panic!("Unhandled type: existential type"),
-        Type::TypeVar(_x) => panic!("Unhandled type: type var"),
-        Type::Unknown => panic!("Unhandled type: unknown"),
+/// Provide the appropriate representation of each type in WebAssembly.
+///
+/// This primarily pertains to how what type it needs to be if it is stored in
+/// a local variable, or is provided in a parameter, etc. Some types are stored
+/// directly (e.g. integers, booleans), while others are just stored as 32-bit
+/// pointers (e.g. strings, records) to a place in the WebAssembly memory.
+impl From<Type> for ValueType {
+    fn from(typ: Type) -> Self {
+        match typ {
+            Type::Int => ValueType::I64,
+            Type::Bool => ValueType::I32,
+            Type::Str => panic!("Unhandled type: str"),
+            Type::List(_x) => panic!("Unhandled type: list"),
+            Type::Func(_typs, _ret_typ) => panic!("Unhandled type: func"),
+            Type::Tuple(_typs) => ValueType::I32,
+            Type::Record(_fields) => panic!("Unhandled type: record"),
+            Type::Exists(_bound_var, _inner_typ) => panic!("Unhandled type: existential type"),
+            Type::TypeVar(_x) => panic!("Unhandled type: type var"),
+            Type::Unknown => panic!("Unhandled type: unknown"),
+        }
     }
 }
 
-fn calc_type_size(typ: &Type) -> u32 {
+/// Calculate the number of bytes needed to store a value of the particular
+/// type in the WebAssembly's linear memory.
+fn wasm_size_of(typ: &Type) -> u32 {
     match typ {
         Type::Int => 8,
         Type::Bool => 4,
         Type::Str => panic!("Unhandled type: str"),
         Type::List(_x) => panic!("Unhandled type: list"),
         Type::Func(_typs, _ret_typ) => panic!("Unhandled type: func"),
-        Type::Tuple(types) => types.iter().map(|typ| calc_type_size(typ)).sum(),
+        Type::Tuple(types) => types.iter().map(|typ| wasm_size_of(typ)).sum(),
         Type::Record(_fields) => panic!("Unhandled type: record"),
         Type::Exists(_bound_var, _inner_typ) => panic!("Unhandled type: existential type"),
         Type::TypeVar(_x) => panic!("Unhandled type: type var"),
@@ -159,7 +176,7 @@ fn gen_instr_if(
         .clone()
         .ok_or_else(|| CodeGenerateError::from("If consequent does not have type annotation."))?;
 
-    let block_type = BlockType::Value(convert_to_wasm_type(&cons_type));
+    let block_type = BlockType::Value(cons_type.into());
     Ok([
         pred_instr,
         vec![Instruction::If(block_type)],
@@ -184,10 +201,9 @@ fn gen_instr_let(
                 CodeGenerateError::from("Let binding does not have type annotation.")
             })?;
         let mut exp_instr = gen_instr(&pair.1, state)?;
-        let wasm_type = convert_to_wasm_type(&exp_type);
         state
             .locals
-            .insert(pair.0.clone(), (local_index, wasm_type));
+            .insert(pair.0.clone(), (local_index, exp_type.into()));
         let_instr.append(&mut exp_instr);
         let_instr.push(Instruction::SetLocal(local_index));
     }
@@ -212,13 +228,12 @@ fn gen_instr_tuple(
         let exp_type = exp.checked_type.clone().ok_or_else(|| {
             CodeGenerateError::from("Tuple component does not have type annotation.")
         })?;
-        let exp_wasm_type = convert_to_wasm_type(&exp_type);
-        let part_size = calc_type_size(&exp_type);
+        let part_size = wasm_size_of(&exp_type);
         let idx = state.mem_index as i32;
         state.mem_index += part_size;
         tuple_instr.push(Instruction::I32Const(idx));
         tuple_instr.append(&mut exp_instr);
-        match exp_wasm_type {
+        match exp_type.into() {
             ValueType::I32 => tuple_instr.push(Instruction::I32Store(0, 0)),
             ValueType::I64 => tuple_instr.push(Instruction::I64Store(0, 0)),
             _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
@@ -247,8 +262,7 @@ fn gen_instr_tuple_get(
                 // TODO: change key to be of type u32?
                 match curr_key.cmp(&key) {
                     Ordering::Equal => {
-                        let wasm_type = convert_to_wasm_type(&typ);
-                        match wasm_type {
+                        match typ.into() {
                             ValueType::I32 => {
                                 tuple_get_instr.push(Instruction::I32Load(0, curr_mem_offset))
                             }
@@ -263,7 +277,7 @@ fn gen_instr_tuple_get(
                         return Err(CodeGenerateError::from("Memory alignment error."))
                     }
                     Ordering::Less => {
-                        let type_size = calc_type_size(&typ);
+                        let type_size = wasm_size_of(&typ);
                         curr_mem_offset += type_size;
                         curr_key += 1;
                     }
@@ -321,6 +335,10 @@ pub fn gen_instr(
     Ok(instructions?)
 }
 
+/// Construct a WebAssembly module.
+///
+/// We assume that the `Instructions` argument passed in does not contain
+/// a closing `Instruction::End` instruction. (can be changed if needed)
 pub fn construct_module(
     name: &str,
     state: CodeGenerateState,
@@ -328,23 +346,29 @@ pub fn construct_module(
     ret_type: Type,
     mut instructions: Instructions,
 ) -> Module {
-    let wasm_ret_type = convert_to_wasm_type(&ret_type);
-
+    // Construct the list of WebAssembly parameter types
     let wasm_param_types = param_types
         .iter()
-        .map(|typ| convert_to_wasm_type(typ))
+        .map(|typ| typ.clone().into())
         .collect::<Vec<ValueType>>();
 
+    // Construct the list of local variables in order from state.locals,
+    // which is internally a BTreeMap. First, the map is iterated over to
+    // build a vector.
     let mut wasm_locals = state
         .locals
         .iter()
-        .map(|(_sym, idx_typ_pair)| *idx_typ_pair)
+        .map(|(_sym, idx_typ_pair)| *idx_typ_pair) // iter over (key, value) in BTreeMap
         .collect::<Vec<(u32, ValueType)>>();
+    // Sort the entires by index (since the iterator's order is not guaranteed)
     wasm_locals.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    // Finally, drop the indices, and construct locals using the type information
     let wasm_locals = wasm_locals
         .iter()
         .map(|(_index, typ)| Local::new(1, *typ))
         .collect::<Vec<Local>>();
+
+    // Add the required end instruction
     instructions.elements_mut().push(Instruction::End);
 
     builder::module()
@@ -355,7 +379,7 @@ pub fn construct_module(
         .function()
         .signature()
         .with_params(wasm_param_types)
-        .with_return_type(Some(wasm_ret_type))
+        .with_return_type(Some(ret_type.into()))
         .build()
         .body()
         .with_locals(wasm_locals)
