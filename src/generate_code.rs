@@ -150,12 +150,12 @@ fn gen_instr_binop(
         BinOp::And => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64And]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32And]].concat())
         }
         BinOp::Or => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64Or]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Or]].concat())
         }
         BinOp::Concat => Err(CodeGenerateError::from("Unhandled binop: concat.")),
     }
@@ -293,6 +293,23 @@ fn gen_instr_tuple_get(
     Ok([tuple_instr, tuple_get_instr].concat())
 }
 
+fn gen_instr_is_null(
+    exp: &Expr,
+    _state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let exp_type = exp
+        .checked_type
+        .clone()
+        .ok_or_else(|| CodeGenerateError::from("null? argument does not have type annotation."))?;
+    match exp_type {
+        // TODO: complete implementation
+        Type::List(_x) => Err(CodeGenerateError::from("Unhandled null? case.")),
+        // Just by type checking, we can guarantee everything else is false
+        // (since we are only treating the empty list as false)
+        _ => Ok(vec![Instruction::I32Const(0)]),
+    }
+}
+
 pub fn gen_instr(
     exp: &Expr,
     state: &mut CodeGenerateState,
@@ -321,7 +338,7 @@ pub fn gen_instr(
         // ExprKind::Cons(first, rest) => tc_cons_with_env(&first, &rest, env),
         // ExprKind::Car(exp) => tc_car_with_env(&exp, env),
         // ExprKind::Cdr(exp) => tc_cdr_with_env(&exp, env),
-        // ExprKind::IsNull(exp) => tc_is_null_with_env(&exp, env),
+        ExprKind::IsNull(exp) => Ok(gen_instr_is_null(&exp, state)?),
         // ExprKind::Null(typ) => Ok(Type::List(Box::new(typ.clone()))),
         ExprKind::Tuple(exps) => Ok(gen_instr_tuple(&exps, state)?),
         ExprKind::TupleGet(tup, key) => Ok(gen_instr_tuple_get(&tup, *key, state)?),

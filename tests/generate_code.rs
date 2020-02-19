@@ -45,8 +45,12 @@ fn test_basic_math() {
 #[test]
 fn test_basic_control() {
     let exp = parse(&lexpr::from_str("(if (< 5 3) 10 20)").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_control.wasm");
+    let output = test_runner(exp, "basic_control1.wasm");
     assert_eq!(output, Value::I64(20));
+
+    let exp = parse(&lexpr::from_str("(if (or (< -2 7) (null? 3)) 10 20)").unwrap()).unwrap();
+    let output = test_runner(exp, "basic_control2.wasm");
+    assert_eq!(output, Value::I64(10));
 }
 
 #[test]

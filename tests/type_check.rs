@@ -188,6 +188,12 @@ fn test_typecheck_lists_happy() {
     let exp = lexpr::from_str("(null? (null int))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+
+    // we could change the semantics to be more restrictive, but AFAIK
+    // it is okay if we let null take any value in our language as input
+    let exp = lexpr::from_str("(null? 3)").unwrap();
+    let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
+    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
 }
 
 #[test]
