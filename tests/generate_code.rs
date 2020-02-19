@@ -1,7 +1,5 @@
-use std::collections::BTreeMap;
-
 use scheme_to_wasm::common::Expr;
-use scheme_to_wasm::generate_code::{construct_module, gen_instr};
+use scheme_to_wasm::generate_code::{construct_module, gen_instr, CodeGenerateState};
 use scheme_to_wasm::parse::parse;
 use scheme_to_wasm::type_check::type_check;
 
@@ -12,25 +10,23 @@ use wasmer_runtime::{imports, instantiate, Value};
 /// Compiles the expression into wasm and outputs the resulting value
 ///
 /// Does not assume that the Expr has been type checked.
-fn test_runner(exp: Expr) -> Value {
+fn test_runner(exp: Expr, test_name: &str) -> Value {
     let typed_exp = type_check(&exp).unwrap();
     let exp_type = typed_exp.checked_type.clone().unwrap();
-    let mut locals = BTreeMap::new();
-    let instructions = gen_instr(&typed_exp, &mut locals).unwrap();
+    let mut state = CodeGenerateState::default();
+    let instructions = dbg!(gen_instr(&typed_exp, &mut state).unwrap());
     let module = construct_module(
         "main",
-        locals,
+        state,
         vec![],
         exp_type,
         Instructions::new(instructions),
     );
     let binary = parity_wasm::serialize(module.clone()).unwrap();
+
     // output to file for debugging
-    parity_wasm::serialize_to_file(
-        std::env::current_dir().unwrap().join("basic_math.wasm"),
-        module,
-    )
-    .unwrap();
+    parity_wasm::serialize_to_file(std::env::current_dir().unwrap().join(test_name), module)
+        .unwrap();
 
     let import_object = imports! {};
     let instance = instantiate(&binary, &import_object).unwrap();
@@ -42,26 +38,51 @@ fn test_runner(exp: Expr) -> Value {
 #[test]
 fn test_basic_math() {
     let exp = parse(&lexpr::from_str("(* (+ 3 5) (- 4 2))").unwrap()).unwrap();
-    let output = test_runner(exp);
+    let output = test_runner(exp, "basic_math.wasm");
     assert_eq!(output, Value::I64(16));
 }
 
 #[test]
 fn test_basic_control() {
     let exp = parse(&lexpr::from_str("(if (< 5 3) 10 20)").unwrap()).unwrap();
-    let output = test_runner(exp);
+    let output = test_runner(exp, "basic_control.wasm");
     assert_eq!(output, Value::I64(20));
 }
 
 #[test]
 fn test_basic_let() {
     let exp = parse(&lexpr::from_str("(let ((a (+ 3 4))) (+ 3 a))").unwrap()).unwrap();
-    let output = test_runner(exp);
+    let output = test_runner(exp, "basic_let.wasm");
     assert_eq!(output, Value::I64(10));
 }
 
 #[test]
-fn test_handwritten_record() {
+fn test_basic_tuple() {
+    let exp = parse(&lexpr::from_str("(tuple-ref (make-tuple 3 4) 1)").unwrap()).unwrap();
+    let output = test_runner(exp, "basic_tuple1.wasm");
+    assert_eq!(output, Value::I64(4));
+
+    let exp =
+        parse(&lexpr::from_str("(let ((a (make-tuple 23 -9 304))) (tuple-ref a 2))").unwrap())
+            .unwrap();
+    let output = test_runner(exp, "basic_tuple2.wasm");
+    assert_eq!(output, Value::I64(304));
+
+    let exp = parse(
+        &lexpr::from_str(
+            "(let ((a (make-tuple -3 5))
+                   (b (make-tuple 4 -1)))
+            (+ (tuple-ref a 1) (tuple-ref b 0)))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let output = test_runner(exp, "basic_tuple3.wasm");
+    assert_eq!(output, Value::I64(9));
+}
+
+#[test]
+fn test_handwritten_tuple() {
     let module = builder::module()
         .memory()
         .with_min(32)
@@ -91,11 +112,11 @@ fn test_handwritten_record() {
 
     let output = parity_wasm::serialize(module.clone()).unwrap();
 
-    // Can output to a file for debugging/decompiling if necessary.
+    // output to file for debugging
     parity_wasm::serialize_to_file(
         std::env::current_dir()
             .unwrap()
-            .join("handwritten_basic_control.wasm"),
+            .join("handwritten_tuple.wasm"),
         module,
     )
     .unwrap();
