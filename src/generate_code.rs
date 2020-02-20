@@ -1,8 +1,3 @@
-// Just experimenting with WASM
-
-// Some useful examples at
-// https://github.com/paritytech/parity-wasm/tree/master/examples
-
 use crate::common::{BinOp, Expr, ExprKind};
 use crate::types::Type;
 
@@ -40,6 +35,13 @@ impl std::fmt::Display for CodeGenerateError {
     }
 }
 
+/// Maintains metadata used by code-generating functions.
+///
+/// The code-generating functions (gen_instr_*) recursively call each other,
+/// so we need to be able to pass this around mutably as needed.
+///
+/// Stores information such as the local variables used in the current code,
+/// as well as the first free index within WebAssembly's linear memory.
 #[derive(Default)]
 pub struct CodeGenerateState {
     locals: LocalsMap,
@@ -212,7 +214,7 @@ fn gen_instr_let(
     Ok([let_instr, body_instr].concat())
 }
 
-/// Generate instructions for a tuple expression.
+/// Generate instructions for a make-tuple expression.
 ///
 /// The general idea is to insert each part of the tuple into linear memory,
 /// so that they are all in order (and hence can be easily retrieved). The
@@ -296,6 +298,17 @@ fn gen_instr_tuple(
     Ok(tuple_instr)
 }
 
+/// Generate instructions for a tuple-ref expression.
+///
+/// The general strategy (based on the way tuples are constructed) is to
+/// calculate the wasm sizes of the tuple's components, and then iterate
+/// through the tuple's components until we are at the correct position (based
+/// on the key provided as a second argument to tuple-ref), and then load
+/// the value from memory.
+///
+/// TODO: I think this process can be rewritten in a functional/non-iterative
+/// manner. Try calculating curr_mem_offset by summing the first (key - 1)
+/// sizes of the tuple's types converted to wasm types.
 fn gen_instr_tuple_get(
     tuple: &Expr,
     key: u64,
@@ -388,7 +401,7 @@ pub fn gen_instr(
         // ExprKind::RecordGet(record, key) => tc_record_get_with_env(&record, &key, env),
         // ExprKind::Begin(exps) => tc_begin_with_env(&exps, env),
         // ExprKind::Set(sym, exp) => tc_set_bang_with_env(&sym, &exp, env),
-        // ExprKind::Cons(first, rest) => tc_cons_with_env(&first, &rest, env),
+        // ExprKind::Cons(first, rest) => Ok(gen_instr_cons(&first, &rest, state)?),
         // ExprKind::Car(exp) => tc_car_with_env(&exp, env),
         // ExprKind::Cdr(exp) => tc_cdr_with_env(&exp, env),
         ExprKind::IsNull(exp) => Ok(gen_instr_is_null(&exp, state)?),
