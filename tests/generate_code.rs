@@ -86,6 +86,19 @@ fn test_basic_tuple() {
 }
 
 #[test]
+fn test_nested_tuple() {
+    let exp = parse(
+        &lexpr::from_str(
+            "(tuple-ref (tuple-ref (make-tuple (make-tuple 5 6) 7 (make-tuple 8 9)) 0) 1)",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let output = test_runner(exp, "nested_tuple1.wasm");
+    assert_eq!(output, Value::I64(6));
+}
+
+#[test]
 fn test_handwritten_tuple() {
     let module = builder::module()
         .memory()

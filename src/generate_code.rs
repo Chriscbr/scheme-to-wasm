@@ -216,30 +216,83 @@ fn gen_instr_let(
 ///
 /// The general idea is to insert each part of the tuple into linear memory,
 /// so that they are all in order (and hence can be easily retrieved). The
-/// index for the first piece is left on the top of the stack.
+/// the pointer for the head of the tuple is left on the top of the stack.
+///
+/// In the example below, a tuple with three parts (A, B, C) is created, where
+/// A and B are two arbitrary values that require memory allocation, and C is
+/// just a number. The instructions for calculating A, B, and C are generated,
+/// which include several memory allocations. Then, the values left on the
+/// stack (a pointer to A, a pointer to B, and the value of C) are stored in
+/// linear memory (in order), with the index of the beginning (12 in the
+/// diagram) left on top of the stack.
+///
+/// Memory:
+/// +---+---+---+---+---+---+
+/// | A | B     | 0 | 4 | C |
+/// +---+---+---+---+---+---+
+/// 0   4   8   12  16  20  24
+/// Stack:
+/// [ 12 ]
 fn gen_instr_tuple(
     exprs: &Vector<Expr>,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut tuple_instr: Vec<Instruction> = vec![];
-    let tuple_head_idx = state.mem_index as i32;
+
+    // First, calculate and construct all of the components of the tuple (making
+    // any calculations and memory allocations as necessary). This will leave n
+    // values on top of the stack, where n is the tuple size. Each value will
+    // be either a primitive (if it was a boolean or number), or a pointer
+    // (represented as an I32.const).
+    //
+    // While doing so, we keep track of the types of each value so that we
+    // can allocate the parts of the tuple in reverse order (since the last
+    // component of the tuple will be on the top of the stack, etc.).
+    let mut tuple_part_wasm_types: Vec<ValueType> = vec![];
+    let mut tuple_wasm_size: u32 = 0;
+
     for exp in exprs {
+        // This extra instruction is needed so that after calculating the
+        // first component of the tuple, the stack will have I32.const 0 and
+        // the component value on the stack. Both arguments are needed
+        // for the value to be stored into linear memory.
+        tuple_instr.push(Instruction::I32Const(0));
+
         let mut exp_instr = gen_instr(exp, state)?;
         let exp_type = exp.checked_type.clone().ok_or_else(|| {
             CodeGenerateError::from("Tuple component does not have type annotation.")
         })?;
-        let part_size = wasm_size_of(&exp_type);
-        let idx = state.mem_index as i32;
-        state.mem_index += part_size;
-        tuple_instr.push(Instruction::I32Const(idx));
+        tuple_wasm_size += wasm_size_of(&exp_type);
         tuple_instr.append(&mut exp_instr);
-        match exp_type.into() {
-            ValueType::I32 => tuple_instr.push(Instruction::I32Store(0, 0)),
-            ValueType::I64 => tuple_instr.push(Instruction::I64Store(0, 0)),
+        tuple_part_wasm_types.push(exp_type.into());
+    }
+
+    // Allocate the stack values into linear memory by processing through them
+    // in reverse order.
+    //
+    // We also allocate the values backwards in memory, so we start bringing
+    // state.mem_index all the way forward, then iterate through backwards,
+    // and them move it back all the way forward so none of the values
+    // get overwritten.
+    let tuple_head_idx = state.mem_index;
+    state.mem_index += tuple_wasm_size;
+    for wasm_type in tuple_part_wasm_types.iter().rev() {
+        match wasm_type {
+            ValueType::I32 => {
+                state.mem_index -= 4;
+                tuple_instr.push(Instruction::I32Store(0, state.mem_index));
+            }
+            ValueType::I64 => {
+                state.mem_index -= 8;
+                tuple_instr.push(Instruction::I64Store(0, state.mem_index));
+            }
             _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
         }
     }
-    tuple_instr.push(Instruction::I32Const(tuple_head_idx));
+    state.mem_index += tuple_wasm_size;
+
+    // Finally, leave the index for the head of the tuple on top of the stack.
+    tuple_instr.push(Instruction::I32Const(tuple_head_idx as i32));
     Ok(tuple_instr)
 }
 
