@@ -1,3 +1,13 @@
+// TODO: a lot of the error handling within the code generator could be
+// simplified if we had guaranteed type information within the nodes we are
+// annotating, i.e. if Expr.checked_type was of type Type, and not
+// Option<Type>. This could be resolved by refactoring the type checker to
+// produce a specific typed expression structure, (e.g. TExpr), and modifying
+// the closure converter to operate on this type. This hypothetically would
+// lose us some flexibility (say we wanted to try closure converting
+// expressions that haven't been typed checked). But it would also help provide
+// more guarantees that our code is correct.
+
 use crate::common::{BinOp, Expr, ExprKind};
 use crate::types::Type;
 
@@ -69,7 +79,7 @@ impl From<Type> for ValueType {
             Type::Int => ValueType::I64,
             Type::Bool => ValueType::I32,
             Type::Str => panic!("Unhandled type: str"),
-            Type::List(_x) => panic!("Unhandled type: list"),
+            Type::List(_x) => ValueType::I32,
             Type::Func(_typs, _ret_typ) => panic!("Unhandled type: func"),
             Type::Tuple(_typs) => ValueType::I32,
             Type::Record(_fields) => panic!("Unhandled type: record"),
@@ -87,7 +97,7 @@ fn wasm_size_of(typ: &Type) -> u32 {
         Type::Int => 8,
         Type::Bool => 4,
         Type::Str => panic!("Unhandled type: str"),
-        Type::List(_x) => panic!("Unhandled type: list"),
+        Type::List(inner_typ) => 4 + wasm_size_of(inner_typ),
         Type::Func(_typs, _ret_typ) => panic!("Unhandled type: func"),
         Type::Tuple(types) => types.iter().map(|typ| wasm_size_of(typ)).sum(),
         Type::Record(_fields) => panic!("Unhandled type: record"),
@@ -257,7 +267,8 @@ fn gen_instr_tuple(
         // This extra instruction is needed so that after calculating the
         // first component of the tuple, the stack will have I32.const 0 and
         // the component value on the stack. Both arguments are needed
-        // for the value to be stored into linear memory.
+        // for the value to be stored into linear memory (with I32Store or
+        // I64Store).
         tuple_instr.push(Instruction::I32Const(0));
 
         let mut exp_instr = gen_instr(exp, state)?;
@@ -359,6 +370,89 @@ fn gen_instr_tuple_get(
     Ok([tuple_instr, tuple_get_instr].concat())
 }
 
+/// Generate instructions for a cons expression.
+///
+/// A List expression is stored as simply a pair of values: a car (sometimes
+/// a pointer), and a cdr (always a pointer).
+///
+/// The overall strategy is to first generate the instructions for the car and
+/// cdr of of the expression (leaving two values, most likely pointers, on the
+/// stack), and then store the two stack values in memory, leaving an index to
+/// the cons pair on the stack.
+fn gen_instr_cons(
+    first: &Expr,
+    rest: &Expr,
+    state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let mut cons_instr: Vec<Instruction> = vec![];
+
+    // This extra instruction is needed so that after calculating the
+    // car of the cons, the stack will have I32.const 0 and the car value
+    // on the stack. Both arguments are needed for the value to be
+    // stored into linear memory (with I32Store or I64Store).
+    cons_instr.push(Instruction::I32Const(0));
+    let mut first_instr = gen_instr(first, state)?;
+    let first_type = first
+        .checked_type
+        .clone()
+        .ok_or_else(|| CodeGenerateError::from("Car of cons does not have type annotation."))?;
+    cons_instr.append(&mut first_instr);
+    let first_wasm_type: ValueType = first_type.into();
+
+    // See comment above for why this instruction is needed.
+    cons_instr.push(Instruction::I32Const(0));
+    let mut rest_instr = gen_instr(rest, state)?;
+    let rest_type = rest
+        .checked_type
+        .clone()
+        .ok_or_else(|| CodeGenerateError::from("Cdr of cons does not have type annotation."))?;
+    match rest_type.into() {
+        ValueType::I32 => (),
+        _ => {
+            return Err(CodeGenerateError::from(
+                "Cdr of cons is not a pointer expression.",
+            ))
+        }
+    }
+    cons_instr.append(&mut rest_instr);
+
+    let cons_idx = state.mem_index;
+    match first_wasm_type {
+        ValueType::I32 => {
+            // car is I32, cdr is I32
+            state.mem_index += 4;
+            cons_instr.push(Instruction::I32Store(0, state.mem_index));
+            state.mem_index -= 4;
+            cons_instr.push(Instruction::I32Store(0, state.mem_index));
+            state.mem_index += 8;
+        }
+        ValueType::I64 => {
+            // car is I64, cdr is I32
+            state.mem_index += 8;
+            cons_instr.push(Instruction::I32Store(0, state.mem_index));
+            state.mem_index -= 8;
+            cons_instr.push(Instruction::I64Store(0, state.mem_index));
+            state.mem_index += 12;
+        }
+        _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
+    }
+    cons_instr.push(Instruction::I32Const(cons_idx as i32));
+
+    Ok(cons_instr)
+}
+
+/// Generate instructions for a null expression.
+///
+/// A null expression doesn't really store any meaningful information (its
+/// type is meaningful for type checking purposes), so we can just represent it
+/// with a dummy value.
+fn gen_instr_null(
+    _typ: &Type,
+    _state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    Ok(vec![Instruction::I32Const(-1)])
+}
+
 fn gen_instr_is_null(
     exp: &Expr,
     _state: &mut CodeGenerateState,
@@ -401,11 +495,11 @@ pub fn gen_instr(
         // ExprKind::RecordGet(record, key) => tc_record_get_with_env(&record, &key, env),
         // ExprKind::Begin(exps) => tc_begin_with_env(&exps, env),
         // ExprKind::Set(sym, exp) => tc_set_bang_with_env(&sym, &exp, env),
-        // ExprKind::Cons(first, rest) => Ok(gen_instr_cons(&first, &rest, state)?),
+        ExprKind::Cons(first, rest) => Ok(gen_instr_cons(&first, &rest, state)?),
         // ExprKind::Car(exp) => tc_car_with_env(&exp, env),
         // ExprKind::Cdr(exp) => tc_cdr_with_env(&exp, env),
         ExprKind::IsNull(exp) => Ok(gen_instr_is_null(&exp, state)?),
-        // ExprKind::Null(typ) => Ok(Type::List(Box::new(typ.clone()))),
+        ExprKind::Null(typ) => Ok(gen_instr_null(&typ, state)?),
         ExprKind::Tuple(exps) => Ok(gen_instr_tuple(&exps, state)?),
         ExprKind::TupleGet(tup, key) => Ok(gen_instr_tuple_get(&tup, *key, state)?),
         // ExprKind::Pack(val, sub, exist) => tc_pack_with_env(&val, &sub, &exist, env),
@@ -462,7 +556,7 @@ pub fn construct_module(
         .function()
         .signature()
         .with_params(wasm_param_types)
-        .with_return_type(Some(ret_type.into()))
+        .with_return_type(Some(dbg!(ret_type.into())))
         .build()
         .body()
         .with_locals(wasm_locals)

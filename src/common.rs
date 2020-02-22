@@ -57,9 +57,10 @@ impl Expr {
     }
 }
 
-// TODO: add (not x) operator
-// TODO: add (string-equal? x y) operator
-// TODO: add incr/decre operations
+// TODO: add (not x) operation
+// TODO: add (string-equal? x y) operation
+// TODO: add (incr x) and (decr x) operations
+// TODO: add (set-car! x) and (set-cdr! x) operations
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprKind {

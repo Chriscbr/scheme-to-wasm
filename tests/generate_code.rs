@@ -99,6 +99,17 @@ fn test_nested_tuple() {
 }
 
 #[test]
+fn test_basic_cons() {
+    let exp = parse(&lexpr::from_str("(cons 3 (null int))").unwrap()).unwrap();
+    let output = test_runner(exp, "basic_cons1.wasm");
+    assert_eq!(output, Value::I32(0));
+
+    let exp = parse(&lexpr::from_str("(cons 3 (cons 4 (null int)))").unwrap()).unwrap();
+    let output = test_runner(exp, "basic_cons2.wasm");
+    assert_eq!(output, Value::I32(12));
+}
+
+#[test]
 fn test_handwritten_tuple() {
     let module = builder::module()
         .memory()
