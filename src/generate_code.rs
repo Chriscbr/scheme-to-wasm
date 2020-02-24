@@ -18,8 +18,8 @@ use im_rc::Vector;
 use parity_wasm::builder;
 use parity_wasm::elements::{BlockType, Instruction, Instructions, Local, Module, ValueType};
 
-/// A key-value map for finding the WebAssembly type and index associated
-/// with a local variable in the WebAssembly.
+/// A key-value map for finding the local variable index and WebAssembly type
+/// associated with a local variable.
 ///
 /// Ex. when compiling `(let ((a 3)) (+ a 3))`, the value of `a` will be
 /// stored in a local variable within the WebAssembly function, and the index
@@ -220,7 +220,7 @@ fn gen_instr_let(
         let_instr.append(&mut exp_instr);
         let_instr.push(Instruction::SetLocal(local_index));
     }
-    let body_instr = gen_instr(body, state)?;
+    let body_instr = dbg!(gen_instr(body, state)?);
 
     Ok([let_instr, body_instr].concat())
 }
@@ -230,7 +230,11 @@ fn gen_instr_begin(
     exps: &Vector<Expr>,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
-    assert!(exps.is_empty(), false);
+    if exps.is_empty() {
+        return Err(CodeGenerateError::from(
+            "Begin expression contains no subexpressions!",
+        ));
+    }
     let first_exps = exps.iter().take(exps.len() - 1);
     let last_exp = exps.last().unwrap();
     let mut begin_instr: Vec<Instruction> = vec![];
@@ -241,7 +245,24 @@ fn gen_instr_begin(
     }
     let mut last_exp_instr = gen_instr(&last_exp, state)?;
     begin_instr.append(&mut last_exp_instr);
-    Ok(begin_instr)
+    Ok(dbg!(begin_instr))
+}
+
+/// Generate instructions for a set! expression.
+fn gen_instr_set(
+    sym: &str,
+    exp: &Expr,
+    state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let mut set_instr: Vec<Instruction> = vec![];
+    let (local_idx, _wasm_type) = *(state
+        .locals
+        .get(sym)
+        .ok_or_else(|| CodeGenerateError::from("Symbol not found within local scope."))?);
+    let mut exp_instr = gen_instr(exp, state)?;
+    set_instr.append(&mut exp_instr);
+    set_instr.push(Instruction::TeeLocal(local_idx));
+    Ok(set_instr)
 }
 
 /// Generate instructions for a make-tuple expression.
@@ -601,7 +622,7 @@ pub fn gen_instr(
         // ExprKind::Record(bindings) => tc_record_with_env(&bindings, env),
         // ExprKind::RecordGet(record, key) => tc_record_get_with_env(&record, &key, env),
         ExprKind::Begin(exps) => Ok(gen_instr_begin(&exps, state)?),
-        // ExprKind::Set(sym, exp) => tc_set_bang_with_env(&sym, &exp, env),
+        ExprKind::Set(sym, exp) => Ok(gen_instr_set(&sym, &exp, state)?),
         ExprKind::Cons(first, rest) => Ok(gen_instr_cons(&first, &rest, state)?),
         ExprKind::Car(cons) => Ok(gen_instr_car(&cons, state)?),
         ExprKind::Cdr(cons) => Ok(gen_instr_cdr(&cons, state)?),
@@ -663,7 +684,7 @@ pub fn construct_module(
         .function()
         .signature()
         .with_params(wasm_param_types)
-        .with_return_type(Some(dbg!(ret_type.into())))
+        .with_return_type(Some(ret_type.into()))
         .build()
         .body()
         .with_locals(wasm_locals)

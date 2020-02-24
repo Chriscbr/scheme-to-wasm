@@ -137,6 +137,17 @@ fn test_compile_begin() {
 }
 
 #[test]
+fn test_compile_set() {
+    let exp = parse(&lexpr::from_str("(let ((a 3)) (set! a 5))").unwrap()).unwrap();
+    let output = test_runner(exp, "set1.wasm");
+    assert_eq!(output, Value::I64(5));
+
+    let exp = parse(&lexpr::from_str("(let ((a 3)) (begin (set! a 5) (+ a 2)))").unwrap()).unwrap();
+    let output = test_runner(exp, "set2.wasm");
+    assert_eq!(output, Value::I64(7));
+}
+
+#[test]
 fn test_handwritten_tuple() {
     let module = builder::module()
         .memory()

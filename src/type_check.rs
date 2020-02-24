@@ -203,8 +203,19 @@ fn tc_begin_with_env(exps: &Vector<Expr>, env: &TypeEnv<Type>) -> Result<Expr, T
     // Note: even though we only return the type of the
     // last expression within the 'begin' S-expression, we still want to
     // type-check the entire array in case any type errors pop up
-    let exp_typs = tc_array_with_env(exps, env)?;
-    Ok(exp_typs.clone().remove(exp_typs.len() - 1))
+    let typed_exps = tc_array_with_env(exps, env)?;
+    let mut inner_types = typed_exps
+        .iter()
+        .map(|typed_exp| {
+            typed_exp.checked_type.clone().ok_or_else(|| {
+                TypeCheckError::from("Subexpression of begin does not have type annotation!.")
+            })
+        })
+        .collect::<Result<Vector<Type>, TypeCheckError>>()?;
+    Ok(Expr::new(
+        Some(inner_types.remove(inner_types.len() - 1)),
+        ExprKind::Begin(typed_exps),
+    ))
 }
 
 // set! returns the value that is being assigned, since the language has no unit type
