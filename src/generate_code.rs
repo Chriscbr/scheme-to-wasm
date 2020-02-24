@@ -522,20 +522,38 @@ fn gen_instr_null(
     Ok(vec![Instruction::I32Const(-1)])
 }
 
+/// Generates instructions for a null? expression.
+///
+/// Our current implementation will allow non-List type expressions to appear
+/// as arguments, but the result value will always be false (i.e. any
+/// non-list types are automatically not null). We could allow for other
+/// constructs such as the notion of falsey values (perhaps Num(0)) is null?,
+/// but this distinction isn't particularly important (except perhaps for
+/// the desire to respect type-theoretic guarantees about the language).
+///
+/// In addition, even if the inner expression is not a list type, we will
+/// still calculate it in case some kind of useful / effect-ful computation
+/// is being performed.
 fn gen_instr_is_null(
     exp: &Expr,
-    _state: &mut CodeGenerateState,
+    state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let mut exp_instr = gen_instr(exp, state)?;
     let exp_type = exp
         .checked_type
         .clone()
         .ok_or_else(|| CodeGenerateError::from("null? argument does not have type annotation."))?;
     match exp_type {
-        // TODO: complete implementation
-        Type::List(_x) => Err(CodeGenerateError::from("Unhandled null? case.")),
-        // Just by type checking, we can guarantee everything else is false
-        // (since we are only treating the empty list as false)
-        _ => Ok(vec![Instruction::I32Const(0)]),
+        Type::List(_inner_type) => {
+            exp_instr.push(Instruction::I32Const(-1)); // all (null 'typ) expressions are represented as I32Const(-1)
+            exp_instr.push(Instruction::I32Eq);
+            Ok(exp_instr)
+        }
+        _ => {
+            exp_instr.push(Instruction::Drop); // ignore the actual value of the inner expression
+            exp_instr.push(Instruction::I32Const(0)); // return "false"
+            Ok(exp_instr)
+        }
     }
 }
 
@@ -545,7 +563,7 @@ pub fn gen_instr(
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let instructions: Result<Vec<Instruction>, CodeGenerateError> = match &*exp.kind {
         ExprKind::Num(x) => Ok(vec![Instruction::I64Const(*x)]),
-        ExprKind::Bool(x) => Ok(vec![Instruction::I64Const(*x as i64)]),
+        ExprKind::Bool(x) => Ok(vec![Instruction::I32Const(*x as i32)]),
         ExprKind::Str(_) => panic!("Unhandled gen_instr case: Str"),
         ExprKind::Id(sym) => {
             let local_idx = state
