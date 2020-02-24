@@ -441,6 +441,75 @@ fn gen_instr_cons(
     Ok(cons_instr)
 }
 
+/// Generate instructions for a car expression.
+fn gen_instr_car(
+    cons: &Expr,
+    state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let mut car_instr = gen_instr(cons, state)?;
+    // cons expressions should always return a 32-bit pointer, so the
+    // offset argument required for I32Load should be on the stack ready to use
+    let cons_type = cons
+        .checked_type
+        .clone()
+        .ok_or_else(|| CodeGenerateError::from("Cons does not have type annotation."))?;
+    let car_type = match cons_type {
+        Type::List(inner_type) => *inner_type,
+        _ => {
+            return Err(CodeGenerateError::from(
+                "Cons has an invalid type annotation.",
+            ))
+        }
+    };
+    let wasm_car_type: ValueType = car_type.into();
+    match wasm_car_type {
+        ValueType::I64 => {
+            car_instr.push(Instruction::I64Load(0, 0));
+        }
+        ValueType::I32 => {
+            car_instr.push(Instruction::I32Load(0, 0));
+        }
+        _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
+    }
+    Ok(car_instr)
+}
+
+/// Generate instructions for a cdr expression.
+fn gen_instr_cdr(
+    cons: &Expr,
+    state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let mut cdr_instr = gen_instr(cons, state)?;
+    // cons expressions should always return a 32-bit pointer, so the
+    // offset argument required for I32Load should be on the stack ready to use
+    let cons_type = cons
+        .checked_type
+        .clone()
+        .ok_or_else(|| CodeGenerateError::from("Cons does not have type annotation."))?;
+    let car_type = match cons_type {
+        Type::List(inner_type) => *inner_type,
+        _ => {
+            return Err(CodeGenerateError::from(
+                "Cons has an invalid type annotation.",
+            ))
+        }
+    };
+    // Depending on the size of the car of the cons expression, the pointer to
+    // the cdr expression will either be located 4 bytes or 8 bytes after
+    // the car expression
+    let wasm_car_type: ValueType = car_type.into();
+    match wasm_car_type {
+        ValueType::I64 => {
+            cdr_instr.push(Instruction::I32Load(0, 8));
+        }
+        ValueType::I32 => {
+            cdr_instr.push(Instruction::I32Load(0, 4));
+        }
+        _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
+    }
+    Ok(cdr_instr)
+}
+
 /// Generate instructions for a null expression.
 ///
 /// A null expression doesn't really store any meaningful information (its
@@ -496,8 +565,8 @@ pub fn gen_instr(
         // ExprKind::Begin(exps) => tc_begin_with_env(&exps, env),
         // ExprKind::Set(sym, exp) => tc_set_bang_with_env(&sym, &exp, env),
         ExprKind::Cons(first, rest) => Ok(gen_instr_cons(&first, &rest, state)?),
-        // ExprKind::Car(exp) => tc_car_with_env(&exp, env),
-        // ExprKind::Cdr(exp) => tc_cdr_with_env(&exp, env),
+        ExprKind::Car(cons) => Ok(gen_instr_car(&cons, state)?),
+        ExprKind::Cdr(cons) => Ok(gen_instr_cdr(&cons, state)?),
         ExprKind::IsNull(exp) => Ok(gen_instr_is_null(&exp, state)?),
         ExprKind::Null(typ) => Ok(gen_instr_null(&typ, state)?),
         ExprKind::Tuple(exps) => Ok(gen_instr_tuple(&exps, state)?),

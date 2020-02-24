@@ -100,13 +100,17 @@ fn test_nested_tuple() {
 
 #[test]
 fn test_basic_cons() {
-    let exp = parse(&lexpr::from_str("(cons 3 (null int))").unwrap()).unwrap();
+    let exp = parse(&lexpr::from_str("(car (cons 3 (null int)))").unwrap()).unwrap();
     let output = test_runner(exp, "basic_cons1.wasm");
-    assert_eq!(output, Value::I32(0));
+    assert_eq!(output, Value::I64(3));
 
-    let exp = parse(&lexpr::from_str("(cons 3 (cons 4 (null int)))").unwrap()).unwrap();
+    let exp = parse(&lexpr::from_str("(car (cons 3 (cons 4 (null int))))").unwrap()).unwrap();
     let output = test_runner(exp, "basic_cons2.wasm");
-    assert_eq!(output, Value::I32(12));
+    assert_eq!(output, Value::I64(3));
+
+    let exp = parse(&lexpr::from_str("(car (cdr (cons 3 (cons 4 (null int)))))").unwrap()).unwrap();
+    let output = test_runner(exp, "basic_cons3.wasm");
+    assert_eq!(output, Value::I64(4));
 }
 
 #[test]
@@ -122,11 +126,11 @@ fn test_handwritten_tuple() {
         .build()
         .body()
         .with_instructions(Instructions::new(vec![
-            Instruction::I32Const(0),    // optional offset value
+            Instruction::I32Const(0),    // offset argument
             Instruction::I64Const(10),   // value that gets stored
-            Instruction::I64Store(0, 0), // offset value and (optional) alignment value
-            Instruction::I32Const(0),
-            Instruction::I64Load(0, 0),
+            Instruction::I64Store(0, 0), // (optional) alignment value, and offset value
+            Instruction::I32Const(0),    // offset argument
+            Instruction::I64Load(0, 0),  // (optimal) alignment value, and offset value
             Instruction::End,
         ]))
         .build()
