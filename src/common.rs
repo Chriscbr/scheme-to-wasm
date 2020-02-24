@@ -38,6 +38,13 @@ pub fn generate_id() -> u64 {
 }
 
 /// Only use this for testing purposes!
+///
+/// If tests aren't being run sequentially / in series, then it's entirely
+/// possible that the GENSYM_COUNT counter will get desynchronized. The primary
+/// issue with this isn't that it will generate inconsistent programs, but
+/// that the programs may have temporary variable names etc. that vary
+/// from one compilation to another, which makes validating tests more
+/// difficult.
 pub fn dangerously_reset_gensym_count() {
     GENSYM_COUNT.store(0, Ordering::SeqCst);
 }
@@ -135,10 +142,10 @@ impl std::fmt::Display for Expr {
             ExprKind::Null(typ) => write!(f, "(null {})", typ),
             ExprKind::Tuple(exps) => write!(f, "(make-tuple {})", format_vector(exps.clone())),
             ExprKind::TupleGet(tup, key) => write!(f, "(tuple-ref {} {})", tup, key),
-            // TODO: change to (pack typ_sub val : exist)
+            // TODO: change to (pack typ_sub val : exist)?
             ExprKind::Pack(val, sub, exist) => write!(f, "(pack {} {} {})", val, sub, exist),
             ExprKind::Unpack(var, package, typ_sub, body) => {
-                write!(f, "(unpack ({} {} {}) {})", var, package, typ_sub, body)
+                write!(f, "(unpack ({} {} T{}) {})", var, package, typ_sub, body)
             }
             ExprKind::Id(val) => write!(f, "{}", val),
             ExprKind::Num(val) => write!(f, "{}", val),

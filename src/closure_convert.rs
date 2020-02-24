@@ -379,9 +379,10 @@ pub fn closure_convert(exp: &Expr) -> Result<Expr, ClosureConvertError> {
 }
 
 /// Q: Why is a type environment needed for closure conversion?
+///
 /// A: When closure converting lambdas, it is necessary to keep track of types
-/// (especially as we try to closure convert lambdas within other lambdas) of
-/// outer lambdas so that we can properly generate the right type signatures
+/// of outer lambdas (especially as we try to closure convert lambdas within
+/// other lambdas) so that we can properly generate the right type signatures
 /// of record environments (i.e. the "envX" which becomes the first argument
 /// of all new lambdas).
 fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {

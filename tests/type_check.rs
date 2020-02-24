@@ -312,8 +312,10 @@ fn test_typecheck_records_sad() {
     let typed_exp = type_check(&parse(&exp).unwrap());
     assert_eq!(typed_exp.is_err(), true);
 
-    // TODO: In practice we shouldn't allow multiple of the same field for a record,
-    // but this isn't high priority language feature.
+    // TODO: In practice, the compiler should have some kind of check to ensure
+    // records are not being constructed with multiple fields of the same name,
+    // (unless perhaps there were macros or something), but this isn't a
+    // high priority feature.
 
     // // record contains duplicate values
     // let exp = lexpr::from_str(r#"(make-record (num 3) (num 4))"#).unwrap();

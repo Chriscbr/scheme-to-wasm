@@ -2,9 +2,6 @@ use crate::common::{BinOp, Expr, ExprKind, Prog, TypeEnv};
 use crate::types::{type_contains_var, type_var_substitute, Type};
 use im_rc::{vector, Vector};
 
-// TODO: Update type checker / Expr class to annotate individual nodes of
-// expression tree with appropriate types.
-
 #[derive(Clone, Debug)]
 pub struct TypeCheckError(String);
 

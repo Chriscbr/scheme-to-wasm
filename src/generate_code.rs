@@ -48,10 +48,13 @@ impl std::fmt::Display for CodeGenerateError {
 /// Maintains metadata used by code-generating functions.
 ///
 /// The code-generating functions (gen_instr_*) recursively call each other,
-/// so we need to be able to pass this around mutably as needed.
+/// so this struct needs to be mutable (even if it's just via cloning, etc.)
 ///
-/// Stores information such as the local variables used in the current code,
-/// as well as the first free index within WebAssembly's linear memory.
+/// This struct store information such as:
+/// a) the local variables that are within scope of the expression being
+///    compiled
+/// b) the first free index within WebAssembly's linear memory safe to allocate
+///    new data (tuples, records, etc.) to
 #[derive(Default)]
 pub struct CodeGenerateState {
     locals: LocalsMap,
@@ -220,7 +223,7 @@ fn gen_instr_let(
         let_instr.append(&mut exp_instr);
         let_instr.push(Instruction::SetLocal(local_index));
     }
-    let body_instr = dbg!(gen_instr(body, state)?);
+    let body_instr = gen_instr(body, state)?;
 
     Ok([let_instr, body_instr].concat())
 }
@@ -245,7 +248,7 @@ fn gen_instr_begin(
     }
     let mut last_exp_instr = gen_instr(&last_exp, state)?;
     begin_instr.append(&mut last_exp_instr);
-    Ok(dbg!(begin_instr))
+    Ok(begin_instr)
 }
 
 /// Generate instructions for a set! expression.
