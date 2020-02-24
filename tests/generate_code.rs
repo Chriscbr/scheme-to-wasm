@@ -36,40 +36,40 @@ fn test_runner(exp: Expr, test_name: &str) -> Value {
 }
 
 #[test]
-fn test_compile_basic_math() {
+fn test_compile_math() {
     let exp = parse(&lexpr::from_str("(* (+ 3 5) (- 4 2))").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_math.wasm");
+    let output = test_runner(exp, "math.wasm");
     assert_eq!(output, Value::I64(16));
 }
 
 #[test]
-fn test_compile_basic_control() {
+fn test_compile_control() {
     let exp = parse(&lexpr::from_str("(if (< 5 3) 10 20)").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_control1.wasm");
+    let output = test_runner(exp, "control1.wasm");
     assert_eq!(output, Value::I64(20));
 
     let exp = parse(&lexpr::from_str("(if (or (< -2 7) (null? 3)) 10 20)").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_control2.wasm");
+    let output = test_runner(exp, "control2.wasm");
     assert_eq!(output, Value::I64(10));
 }
 
 #[test]
-fn test_compile_basic_let() {
+fn test_compile_let() {
     let exp = parse(&lexpr::from_str("(let ((a (+ 3 4))) (+ 3 a))").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_let.wasm");
+    let output = test_runner(exp, "let.wasm");
     assert_eq!(output, Value::I64(10));
 }
 
 #[test]
-fn test_compile_basic_tuple() {
+fn test_compile_tuple() {
     let exp = parse(&lexpr::from_str("(tuple-ref (make-tuple 3 4) 1)").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_tuple1.wasm");
+    let output = test_runner(exp, "tuple1.wasm");
     assert_eq!(output, Value::I64(4));
 
     let exp =
         parse(&lexpr::from_str("(let ((a (make-tuple 23 -9 304))) (tuple-ref a 2))").unwrap())
             .unwrap();
-    let output = test_runner(exp, "basic_tuple2.wasm");
+    let output = test_runner(exp, "tuple2.wasm");
     assert_eq!(output, Value::I64(304));
 
     let exp = parse(
@@ -81,7 +81,7 @@ fn test_compile_basic_tuple() {
         .unwrap(),
     )
     .unwrap();
-    let output = test_runner(exp, "basic_tuple3.wasm");
+    let output = test_runner(exp, "tuple3.wasm");
     assert_eq!(output, Value::I64(9));
 }
 
@@ -99,33 +99,41 @@ fn test_compile_nested_tuple() {
 }
 
 #[test]
-fn test_compile_basic_cons() {
+fn test_compile_cons() {
     let exp = parse(&lexpr::from_str("(car (cons 3 (null int)))").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_cons1.wasm");
+    let output = test_runner(exp, "cons1.wasm");
     assert_eq!(output, Value::I64(3));
 
     let exp = parse(&lexpr::from_str("(car (cons 3 (cons 4 (null int))))").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_cons2.wasm");
+    let output = test_runner(exp, "cons2.wasm");
     assert_eq!(output, Value::I64(3));
 
     let exp = parse(&lexpr::from_str("(car (cdr (cons 3 (cons 4 (null int)))))").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_cons3.wasm");
+    let output = test_runner(exp, "cons3.wasm");
     assert_eq!(output, Value::I64(4));
 }
 
 #[test]
-fn test_compile_basic_is_null() {
+fn test_compile_is_null() {
     let exp = parse(&lexpr::from_str("(null? (null int))").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_is_null1.wasm");
+    let output = test_runner(exp, "is_null1.wasm");
     assert_eq!(output, Value::I32(1));
 
     let exp = parse(&lexpr::from_str("(null? (cons 3 (null int)))").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_is_null2.wasm");
+    let output = test_runner(exp, "is_null2.wasm");
     assert_eq!(output, Value::I32(0));
 
     let exp = parse(&lexpr::from_str("(null? 7)").unwrap()).unwrap();
-    let output = test_runner(exp, "basic_is_null3.wasm");
+    let output = test_runner(exp, "is_null3.wasm");
     assert_eq!(output, Value::I32(0));
+}
+
+#[test]
+fn test_compile_begin() {
+    let exp =
+        parse(&lexpr::from_str("(begin (+ 3 5) (+ 4 7) (make-tuple 1 2) 42)").unwrap()).unwrap();
+    let output = test_runner(exp, "begin1.wasm");
+    assert_eq!(output, Value::I64(42));
 }
 
 #[test]

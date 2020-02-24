@@ -200,6 +200,7 @@ fn gen_instr_if(
     .concat())
 }
 
+/// Generate instructions for a let expression.
 fn gen_instr_let(
     bindings: &Vector<(String, Expr)>,
     body: &Expr,
@@ -222,6 +223,25 @@ fn gen_instr_let(
     let body_instr = gen_instr(body, state)?;
 
     Ok([let_instr, body_instr].concat())
+}
+
+/// Generate instructions for a begin expression.
+fn gen_instr_begin(
+    exps: &Vector<Expr>,
+    state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    assert!(exps.is_empty(), false);
+    let first_exps = exps.iter().take(exps.len() - 1);
+    let last_exp = exps.last().unwrap();
+    let mut begin_instr: Vec<Instruction> = vec![];
+    for exp in first_exps {
+        let mut exp_instr = gen_instr(exp, state)?;
+        begin_instr.append(&mut exp_instr);
+        begin_instr.push(Instruction::Drop);
+    }
+    let mut last_exp_instr = gen_instr(&last_exp, state)?;
+    begin_instr.append(&mut last_exp_instr);
+    Ok(begin_instr)
 }
 
 /// Generate instructions for a make-tuple expression.
@@ -580,7 +600,7 @@ pub fn gen_instr(
         // }
         // ExprKind::Record(bindings) => tc_record_with_env(&bindings, env),
         // ExprKind::RecordGet(record, key) => tc_record_get_with_env(&record, &key, env),
-        // ExprKind::Begin(exps) => tc_begin_with_env(&exps, env),
+        ExprKind::Begin(exps) => Ok(gen_instr_begin(&exps, state)?),
         // ExprKind::Set(sym, exp) => tc_set_bang_with_env(&sym, &exp, env),
         ExprKind::Cons(first, rest) => Ok(gen_instr_cons(&first, &rest, state)?),
         ExprKind::Car(cons) => Ok(gen_instr_car(&cons, state)?),
