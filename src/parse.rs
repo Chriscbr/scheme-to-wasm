@@ -473,9 +473,17 @@ fn parse_unpack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
 pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
     match value {
         lexpr::Value::Number(x) => match x.as_i64() {
-            Some(val) => Ok(Expr::new(None, ExprKind::Num(val))),
+            Some(val) => {
+                if val >= i32::min_value() as i64 && val <= i32::max_value() as i64 {
+                    Ok(Expr::new(None, ExprKind::Num(val as i32)))
+                } else {
+                    Err(ParseError::from(
+                        "Invalid number found (must be a 32-bit integer).",
+                    ))
+                }
+            }
             None => Err(ParseError::from(
-                "Invalid number found (must be a 64-bit integer).",
+                "Invalid number found (must be a 32-bit integer).",
             )),
         },
         lexpr::Value::Bool(x) => Ok(Expr::new(None, ExprKind::Bool(*x))),

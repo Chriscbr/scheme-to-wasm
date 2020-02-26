@@ -39,38 +39,38 @@ fn test_runner(exp: Expr, test_name: &str) -> Value {
 fn test_compile_math() {
     let exp = parse(&lexpr::from_str("(* (+ 3 5) (- 4 2))").unwrap()).unwrap();
     let output = test_runner(exp, "math.wasm");
-    assert_eq!(output, Value::I64(16));
+    assert_eq!(output, Value::I32(16));
 }
 
 #[test]
 fn test_compile_control() {
     let exp = parse(&lexpr::from_str("(if (< 5 3) 10 20)").unwrap()).unwrap();
     let output = test_runner(exp, "control1.wasm");
-    assert_eq!(output, Value::I64(20));
+    assert_eq!(output, Value::I32(20));
 
     let exp = parse(&lexpr::from_str("(if (or (< -2 7) (null? 3)) 10 20)").unwrap()).unwrap();
     let output = test_runner(exp, "control2.wasm");
-    assert_eq!(output, Value::I64(10));
+    assert_eq!(output, Value::I32(10));
 }
 
 #[test]
 fn test_compile_let() {
     let exp = parse(&lexpr::from_str("(let ((a (+ 3 4))) (+ 3 a))").unwrap()).unwrap();
     let output = test_runner(exp, "let.wasm");
-    assert_eq!(output, Value::I64(10));
+    assert_eq!(output, Value::I32(10));
 }
 
 #[test]
 fn test_compile_tuple() {
     let exp = parse(&lexpr::from_str("(tuple-ref (make-tuple 3 4) 1)").unwrap()).unwrap();
     let output = test_runner(exp, "tuple1.wasm");
-    assert_eq!(output, Value::I64(4));
+    assert_eq!(output, Value::I32(4));
 
     let exp =
         parse(&lexpr::from_str("(let ((a (make-tuple 23 -9 304))) (tuple-ref a 2))").unwrap())
             .unwrap();
     let output = test_runner(exp, "tuple2.wasm");
-    assert_eq!(output, Value::I64(304));
+    assert_eq!(output, Value::I32(304));
 
     let exp = parse(
         &lexpr::from_str(
@@ -82,7 +82,7 @@ fn test_compile_tuple() {
     )
     .unwrap();
     let output = test_runner(exp, "tuple3.wasm");
-    assert_eq!(output, Value::I64(9));
+    assert_eq!(output, Value::I32(9));
 }
 
 #[test]
@@ -95,22 +95,22 @@ fn test_compile_nested_tuple() {
     )
     .unwrap();
     let output = test_runner(exp, "nested_tuple1.wasm");
-    assert_eq!(output, Value::I64(6));
+    assert_eq!(output, Value::I32(6));
 }
 
 #[test]
 fn test_compile_cons() {
     let exp = parse(&lexpr::from_str("(car (cons 3 (null int)))").unwrap()).unwrap();
     let output = test_runner(exp, "cons1.wasm");
-    assert_eq!(output, Value::I64(3));
+    assert_eq!(output, Value::I32(3));
 
     let exp = parse(&lexpr::from_str("(car (cons 3 (cons 4 (null int))))").unwrap()).unwrap();
     let output = test_runner(exp, "cons2.wasm");
-    assert_eq!(output, Value::I64(3));
+    assert_eq!(output, Value::I32(3));
 
     let exp = parse(&lexpr::from_str("(car (cdr (cons 3 (cons 4 (null int)))))").unwrap()).unwrap();
     let output = test_runner(exp, "cons3.wasm");
-    assert_eq!(output, Value::I64(4));
+    assert_eq!(output, Value::I32(4));
 }
 
 #[test]
@@ -133,18 +133,18 @@ fn test_compile_begin() {
     let exp =
         parse(&lexpr::from_str("(begin (+ 3 5) (+ 4 7) (make-tuple 1 2) 42)").unwrap()).unwrap();
     let output = test_runner(exp, "begin1.wasm");
-    assert_eq!(output, Value::I64(42));
+    assert_eq!(output, Value::I32(42));
 }
 
 #[test]
 fn test_compile_set() {
     let exp = parse(&lexpr::from_str("(let ((a 3)) (set! a 5))").unwrap()).unwrap();
     let output = test_runner(exp, "set1.wasm");
-    assert_eq!(output, Value::I64(5));
+    assert_eq!(output, Value::I32(5));
 
     let exp = parse(&lexpr::from_str("(let ((a 3)) (begin (set! a 5) (+ a 2)))").unwrap()).unwrap();
     let output = test_runner(exp, "set2.wasm");
-    assert_eq!(output, Value::I64(7));
+    assert_eq!(output, Value::I32(7));
 }
 
 #[test]
@@ -156,15 +156,15 @@ fn test_handwritten_tuple() {
         .build()
         .function()
         .signature()
-        .with_return_type(Some(ValueType::I64))
+        .with_return_type(Some(ValueType::I32))
         .build()
         .body()
         .with_instructions(Instructions::new(vec![
             Instruction::I32Const(0),    // offset argument
-            Instruction::I64Const(10),   // value that gets stored
-            Instruction::I64Store(0, 0), // (optional) alignment value, and offset value
+            Instruction::I32Const(10),   // value that gets stored
+            Instruction::I32Store(0, 0), // (optional) alignment value, and offset value
             Instruction::I32Const(0),    // offset argument
-            Instruction::I64Load(0, 0),  // (optimal) alignment value, and offset value
+            Instruction::I32Load(0, 0),  // (optimal) alignment value, and offset value
             Instruction::End,
         ]))
         .build()
@@ -191,5 +191,5 @@ fn test_handwritten_tuple() {
     let instance = instantiate(&output, &import_object).unwrap();
     let values = instance.dyn_func("main").unwrap().call(&[]).unwrap();
 
-    assert_eq!(values[0], Value::I64(10));
+    assert_eq!(values[0], Value::I32(10));
 }

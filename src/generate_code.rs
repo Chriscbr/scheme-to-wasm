@@ -79,7 +79,7 @@ impl CodeGenerateState {
 impl From<Type> for ValueType {
     fn from(typ: Type) -> Self {
         match typ {
-            Type::Int => ValueType::I64,
+            Type::Int => ValueType::I32,
             Type::Bool => ValueType::I32,
             Type::Str => panic!("Unhandled type: str"),
             Type::List(_x) => ValueType::I32,
@@ -97,9 +97,10 @@ impl From<Type> for ValueType {
 /// type in the WebAssembly's linear memory.
 fn wasm_size_of(typ: &Type) -> u32 {
     match typ {
-        Type::Int => 8,
+        Type::Int => 4,
         Type::Bool => 4,
         Type::Str => panic!("Unhandled type: str"),
+        // TODO: check if this is correct; what if we have a list of tuple?
         Type::List(inner_typ) => 4 + wasm_size_of(inner_typ),
         Type::Func(_typs, _ret_typ) => panic!("Unhandled type: func"),
         Type::Tuple(types) => types.iter().map(|typ| wasm_size_of(typ)).sum(),
@@ -120,47 +121,47 @@ fn gen_instr_binop(
         BinOp::Add => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64Add]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Add]].concat())
         }
         BinOp::Subtract => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64Sub]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Sub]].concat())
         }
         BinOp::Multiply => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64Mul]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Mul]].concat())
         }
         BinOp::Divide => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64DivS]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32DivS]].concat())
         }
         BinOp::LessThan => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64LtS]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32LtS]].concat())
         }
         BinOp::GreaterThan => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64GtS]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32GtS]].concat())
         }
         BinOp::LessOrEqual => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64LeS]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32LeS]].concat())
         }
         BinOp::GreaterOrEqual => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64GeS]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32GeS]].concat())
         }
         BinOp::EqualTo => {
             let arg1_instr = gen_instr(arg1, state)?;
             let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I64Eq]].concat())
+            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Eq]].concat())
         }
         BinOp::And => {
             let arg1_instr = gen_instr(arg1, state)?;
@@ -606,7 +607,7 @@ pub fn gen_instr(
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let instructions: Result<Vec<Instruction>, CodeGenerateError> = match &*exp.kind {
-        ExprKind::Num(x) => Ok(vec![Instruction::I64Const(*x)]),
+        ExprKind::Num(x) => Ok(vec![Instruction::I32Const(*x)]),
         ExprKind::Bool(x) => Ok(vec![Instruction::I32Const(*x as i32)]),
         ExprKind::Str(_) => panic!("Unhandled gen_instr case: Str"),
         ExprKind::Id(sym) => {

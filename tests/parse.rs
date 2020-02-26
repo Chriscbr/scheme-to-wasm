@@ -1,6 +1,13 @@
 use im_rc::vector;
+use scheme_to_wasm::parse::parse;
 use scheme_to_wasm::parse::parse_type;
 use scheme_to_wasm::types::Type;
+
+#[test]
+fn test_parse_int_bounds() {
+    let exp = lexpr::from_str("2147483648").unwrap();
+    assert_eq!(parse(&exp).is_err(), true);
+}
 
 #[test]
 fn test_parse_type_primitives() {

@@ -90,7 +90,7 @@ pub enum ExprKind {
     Record(Vector<(String, Expr)>),  // map from values to labels
     RecordGet(Expr, String),         // record, label
     Id(String),
-    Num(i64),
+    Num(i32),
     Bool(bool),
     Str(String),
 }
