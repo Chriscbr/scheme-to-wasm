@@ -148,6 +148,71 @@ fn test_compile_set() {
 }
 
 #[test]
+fn test_handwritten_lambda() {
+    let module = builder::module()
+        .memory()
+        .with_min(32)
+        .with_max(None)
+        .build()
+        // add1 function
+        .function()
+        .signature()
+        .with_param(ValueType::I32)
+        .with_return_type(Some(ValueType::I32))
+        .build()
+        .body()
+        .with_instructions(Instructions::new(vec![
+            Instruction::GetLocal(0),
+            Instruction::I32Const(1),
+            Instruction::I32Add,
+            Instruction::End,
+        ]))
+        .build()
+        .build()
+        .export()
+        .field("add1")
+        .internal()
+        .func(0)
+        .build()
+        // main function
+        .function()
+        .signature()
+        .with_return_type(Some(ValueType::I32))
+        .build()
+        .body()
+        .with_instructions(Instructions::new(vec![
+            Instruction::I32Const(5),
+            Instruction::Call(0),
+            Instruction::End,
+        ]))
+        .build()
+        .build()
+        .export()
+        .field("main")
+        .internal()
+        .func(1)
+        .build()
+        .build();
+
+    let output = parity_wasm::serialize(module.clone()).unwrap();
+
+    // output to file for debugging
+    parity_wasm::serialize_to_file(
+        std::env::current_dir()
+            .unwrap()
+            .join("handwritten_lambda.wasm"),
+        module,
+    )
+    .unwrap();
+
+    let import_object = imports! {};
+    let instance = instantiate(&output, &import_object).unwrap();
+    let values = instance.dyn_func("main").unwrap().call(&[]).unwrap();
+
+    assert_eq!(values[0], Value::I32(6));
+}
+
+#[test]
 fn test_handwritten_tuple() {
     let module = builder::module()
         .memory()
