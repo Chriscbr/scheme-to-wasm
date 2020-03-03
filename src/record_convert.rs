@@ -1,5 +1,4 @@
 use crate::common::{Expr, ExprKind};
-use crate::type_check::type_check;
 use crate::types::Type;
 use im_rc::Vector;
 
@@ -100,11 +99,19 @@ fn rc(exp: &Expr) -> Result<Expr, RecordConvertError> {
             Ok(Expr::new(None, ExprKind::Let(rbindings, rbody)))
         }
         ExprKind::Lambda(params, ret_type, body) => {
+            let rparams = params
+                .iter()
+                .map(|pair| {
+                    let rtype = rc_type(&pair.1);
+                    match rtype {
+                        Ok(val) => Ok((pair.0.clone(), val)),
+                        Err(e) => Err(e),
+                    }
+                })
+                .collect::<Result<Vector<(String, Type)>, RecordConvertError>>()?;
             let rbody = rc(&body)?;
-            Ok(Expr::new(
-                None,
-                ExprKind::Lambda(params.clone(), ret_type.clone(), rbody),
-            ))
+            let rret_type = rc_type(&ret_type)?;
+            Ok(Expr::new(None, ExprKind::Lambda(rparams, rret_type, rbody)))
         }
         ExprKind::Begin(exps) => {
             let rexps = exps
@@ -147,7 +154,8 @@ fn rc(exp: &Expr) -> Result<Expr, RecordConvertError> {
             Ok(Expr::new(None, ExprKind::TupleGet(rtuple, *key)))
         }
         ExprKind::Record(bindings) => {
-            let mut bindings_vec: Vec<(String, Expr)> = bindings.iter().cloned().collect();
+            let rbindings = rc_bindings(&bindings)?;
+            let mut bindings_vec: Vec<(String, Expr)> = rbindings.iter().cloned().collect();
             bindings_vec.sort_unstable_by(|a, b| a.0.cmp(&b.0));
             let exp_vec: Vector<Expr> = bindings_vec
                 .iter()
@@ -186,17 +194,9 @@ fn rc(exp: &Expr) -> Result<Expr, RecordConvertError> {
 }
 
 fn get_field_index(record: &Expr, field: &str) -> Result<u64, RecordConvertError> {
-    let record_type: Type = match type_check(record) {
-        Ok(record) => record.checked_type.ok_or_else(|| {
-            RecordConvertError::from("Record expression does not have type annotation.")
-        })?,
-        Err(e) => {
-            return Err(RecordConvertError(format!(
-                "Type checking error during record conversion: {}",
-                e
-            )))
-        }
-    };
+    let record_type = record.checked_type.clone().ok_or_else(|| {
+        RecordConvertError::from("Record expression does not have type annotation.")
+    })?;
     let mut fields_vec: Vec<(String, Type)> = match record_type {
         Type::Record(fields) => Ok(fields.iter().cloned().collect()),
         _ => Err(RecordConvertError::from(
