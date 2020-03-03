@@ -63,6 +63,18 @@ fn rc_type_array(types: &Vector<Type>) -> Result<Vector<Type>, RecordConvertErro
     types.iter().map(|typ| Ok(rc_type(typ)?)).collect()
 }
 
+/// Convert an expression into one with no record or record-ref expressions.
+///
+/// Conversion is performed by replacing records with corresponding tuples,
+/// and replacing record-ref with tuple-ref expressions.
+///
+/// Expression must be type checked (annotated with types) before being passed
+/// in. After conversion, the output expression of this function will have all
+/// type annotations removed, so it should be re-type-checked.
+///
+/// TODO: Modify record conversion for efficiency purposes to not strip all
+/// type information (just replace type annotations where needed). If calling
+/// the type checker is needed, perhaps it can just be done selectively.
 pub fn record_convert(exp: &Expr) -> Result<Expr, RecordConvertError> {
     rc(exp)
 }

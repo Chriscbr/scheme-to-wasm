@@ -623,8 +623,12 @@ pub fn gen_instr(
         // ExprKind::Lambda(params, ret_typ, body) => {
         //     tc_lambda_with_env(&params, &ret_typ, &body, env)
         // }
-        // ExprKind::Record(bindings) => tc_record_with_env(&bindings, env),
-        // ExprKind::RecordGet(record, key) => tc_record_get_with_env(&record, &key, env),
+        ExprKind::Record(_bindings) => Err(CodeGenerateError::from(
+            "Record expressions should be removed via record conversion pass.",
+        )),
+        ExprKind::RecordGet(_record, _key) => Err(CodeGenerateError::from(
+            "Record expressions should be removed via record conversion pass.",
+        )),
         ExprKind::Begin(exps) => Ok(gen_instr_begin(&exps, state)?),
         ExprKind::Set(sym, exp) => Ok(gen_instr_set(&sym, &exp, state)?),
         ExprKind::Cons(first, rest) => Ok(gen_instr_cons(&first, &rest, state)?),
