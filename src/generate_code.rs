@@ -1,12 +1,5 @@
-// TODO: a lot of the error handling within the code generator could be
-// simplified if we had guaranteed type information within the nodes we are
-// annotating, i.e. if Expr.typ was of type Type, and not
-// Option<Type>. This could be resolved by refactoring the type checker to
-// produce a specific typed expression structure, (e.g. TExpr), and modifying
-// the closure converter to operate on this type. This hypothetically would
-// lose us some flexibility (say we wanted to try closure converting
-// expressions that haven't been typed checked). But it would also help provide
-// more guarantees that our code is correct.
+// TODO: consider simplifying code generation everywhere, under the assumption
+// that all data is 32-bit, just to minimize code complexity / maintenance
 
 use crate::common::{BinOp, ExprKind, TypedExpr};
 use crate::types::Type;
@@ -253,7 +246,7 @@ fn gen_instr_set(
     let (local_idx, _wasm_type) = *(state
         .locals
         .get(sym)
-        .ok_or_else(|| CodeGenerateError::from("Symbol not found within local scope."))?);
+        .ok_or_else(|| "Symbol not found within local scope.")?);
     let mut exp_instr = gen_instr(exp, state)?;
     set_instr.append(&mut exp_instr);
     set_instr.push(Instruction::TeeLocal(local_idx));
@@ -578,7 +571,7 @@ pub fn gen_instr(
             let local_idx = state
                 .locals
                 .get(sym)
-                .ok_or_else(|| CodeGenerateError::from("Symbol not found in LocalsMap."))?;
+                .ok_or_else(|| "Symbol not found in LocalsMap.")?;
             Ok(vec![Instruction::GetLocal(local_idx.0)])
         }
         ExprKind::Binop(op, arg1, arg2) => Ok(gen_instr_binop(*op, &arg1, &arg2, state)?),
