@@ -1,6 +1,8 @@
 use crate::types::Type;
 use crate::util::format_vector;
 use im_rc::Vector;
+use std::fmt::Debug;
+use std::fmt::Display;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -49,16 +51,43 @@ pub fn dangerously_reset_gensym_count() {
     GENSYM_COUNT.store(0, Ordering::SeqCst);
 }
 
+/// A blanket trait that defines all of the traits that all expression types
+/// must share / implement.
+///
+/// Currently, the two expression types are Expr and TypedExpr. Once an
+/// expression type implements all of these traits, it will be usable within
+/// all other types that are generic over expression types, such as
+/// ExprKind and Prog.
+pub trait ExprMeta: Clone + Debug + Display + PartialEq {}
+impl<T: Clone + Debug + Display + PartialEq> ExprMeta for T {}
+
+/// A representation of an expression (essentially an AST node) without any
+/// associated type information.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expr {
-    pub checked_type: Option<Type>,
-    pub kind: Box<ExprKind>,
+    pub kind: Box<ExprKind<Expr>>,
 }
 
 impl Expr {
-    pub fn new(typ: Option<Type>, kind: ExprKind) -> Expr {
+    pub fn new(kind: ExprKind<Expr>) -> Self {
         Expr {
-            checked_type: typ,
+            kind: Box::new(kind),
+        }
+    }
+}
+
+/// A representation of an expression (essentially an AST node) with
+/// associated type information.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypedExpr {
+    pub typ: Type,
+    pub kind: Box<ExprKind<TypedExpr>>,
+}
+
+impl TypedExpr {
+    pub fn new(typ: Type, kind: ExprKind<TypedExpr>) -> Self {
+        TypedExpr {
+            typ,
             kind: Box::new(kind),
         }
     }
@@ -70,34 +99,46 @@ impl Expr {
 // TODO: add (set-car! x) and (set-cdr! x) operations
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
-pub enum ExprKind {
-    Binop(BinOp, Expr, Expr),                   // operator, arg1, arg2
-    If(Expr, Expr, Expr),                       // pred, consequent, alternate
-    Let(Vector<(String, Expr)>, Expr),          // variable bindings, body
-    Lambda(Vector<(String, Type)>, Type, Expr), // arg names/types, return type, body
-    Begin(Vector<Expr>),
-    Set(String, Expr),
-    Cons(Expr, Expr),
-    Car(Expr),
-    Cdr(Expr),
-    IsNull(Expr),
+pub enum ExprKind<E: ExprMeta> {
+    Binop(BinOp, E, E),                      // operator, arg1, arg2
+    If(E, E, E),                             // pred, consequent, alternate
+    Let(Vector<(String, E)>, E),             // variable bindings, body
+    Lambda(Vector<(String, Type)>, Type, E), // arg names/types, return type, body
+    Begin(Vector<E>),
+    Set(String, E),
+    Cons(E, E),
+    Car(E),
+    Cdr(E),
+    IsNull(E),
     Null(Type),
-    FnApp(Expr, Vector<Expr>),       // func, arguments
-    Tuple(Vector<Expr>),             // list of expressions, type annotation
-    TupleGet(Expr, u64),             // env, index - index must explicitly be a number
-    Pack(Expr, Type, Type),          // exp, type substitution, existential type
-    Unpack(String, Expr, u64, Expr), // new var, package, type var, body
-    Record(Vector<(String, Expr)>),  // map from values to labels
-    RecordGet(Expr, String),         // record, label
+    FnApp(E, Vector<E>),         // func, arguments
+    Tuple(Vector<E>),            // list of expressions, type annotation
+    TupleGet(E, u64),            // env, index - index must explicitly be a number
+    Pack(E, Type, Type),         // exp, type substitution, existential type
+    Unpack(String, E, u64, E),   // new var, package, type var, body
+    Record(Vector<(String, E)>), // map from values to labels
+    RecordGet(E, String),        // record, label
     Id(String),
     Num(i32),
     Bool(bool),
     Str(String),
 }
 
-impl std::fmt::Display for Expr {
+impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &*self.kind {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl Display for TypedExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl<E: Clone + Display + Debug + PartialEq> Display for ExprKind<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
             ExprKind::Binop(op, exp1, exp2) => write!(f, "({} {} {})", op, exp1, exp2),
             ExprKind::If(pred, cons, alt) => write!(f, "(if {} {} {})", pred, cons, alt),
             ExprKind::Let(bindings, body) => {
@@ -236,12 +277,12 @@ impl<T: Clone> From<Vector<(String, T)>> for TypeEnv<T> {
 }
 
 #[derive(Clone)]
-pub struct Prog {
-    pub fns: Vector<(String, Expr)>,
-    pub exp: Expr,
+pub struct Prog<E> {
+    pub fns: Vector<(String, E)>,
+    pub exp: E,
 }
 
-impl std::fmt::Display for Prog {
+impl<E: ExprMeta> std::fmt::Display for Prog<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut fns_str = String::new();
         if !self.fns.is_empty() {

@@ -8,85 +8,85 @@ use scheme_to_wasm::types::Type;
 fn test_typecheck_prims() {
     let exp = lexpr::from_str("3").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("-497").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("#t").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     let exp = lexpr::from_str("#f").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     let exp = lexpr::from_str("true").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     let exp = lexpr::from_str("false").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     let exp = lexpr::from_str("\"true\"").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Str));
+    assert_eq!(typed_exp.typ, Type::Str);
 
     let exp = lexpr::from_str("\"foo\"").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Str));
+    assert_eq!(typed_exp.typ, Type::Str);
 
     let exp = lexpr::from_str("\"\"").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Str));
+    assert_eq!(typed_exp.typ, Type::Str);
 }
 
 #[test]
 fn test_typecheck_binops_happy() {
     let exp = lexpr::from_str("(+ 3 5)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("(* 3 5)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("(- 3 5)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("(/ 3 5)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("(+ (* 4 5) (- 5 2))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str(r#"(concat "hello " "world")"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Str));
+    assert_eq!(typed_exp.typ, Type::Str);
 
     let exp = lexpr::from_str("(and true false)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     let exp = lexpr::from_str("(or true false)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 }
 
 #[test]
 fn test_typecheck_all_nodes_annotated() {
     let exp = lexpr::from_str("(> 3 5)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
     match *typed_exp.kind {
         ExprKind::Binop(_op, arg1, arg2) => {
-            assert_eq!(arg1.checked_type, Some(Type::Int));
-            assert_eq!(arg2.checked_type, Some(Type::Int));
+            assert_eq!(arg1.typ, Type::Int);
+            assert_eq!(arg2.typ, Type::Int);
         }
         _ => panic!("Non-binop found!"),
     }
@@ -127,73 +127,52 @@ fn test_typecheck_binops_sad() {
 fn test_typecheck_lists_happy() {
     let exp = lexpr::from_str("(null int)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::List(Box::new(Type::Int)))
-    );
+    assert_eq!(typed_exp.typ, Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(null bool)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::List(Box::new(Type::Bool)))
-    );
+    assert_eq!(typed_exp.typ, Type::List(Box::new(Type::Bool)));
 
     let exp = lexpr::from_str("(cons 3 (null int))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::List(Box::new(Type::Int)))
-    );
+    assert_eq!(typed_exp.typ, Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(cons 3 (cons 4 (null int)))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::List(Box::new(Type::Int)))
-    );
+    assert_eq!(typed_exp.typ, Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str(r#"(cons "foo" (cons "bar" (null string)))"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::List(Box::new(Type::Str)))
-    );
+    assert_eq!(typed_exp.typ, Type::List(Box::new(Type::Str)));
 
     // NOTE: these two cases probably looks weird, but it is the simplest solution
     // we can just assume car/cdr of an empty list is the type of the list's items
     // or the type of the list respectively (or that the program just panics?)
     let exp = lexpr::from_str("(car (null int))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("(cdr (null int))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::List(Box::new(Type::Int)))
-    );
+    assert_eq!(typed_exp.typ, Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(car (cons 3 (null int)))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("(cdr (cons 3 (null int)))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::List(Box::new(Type::Int)))
-    );
+    assert_eq!(typed_exp.typ, Type::List(Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(null? (null int))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     // we could change the semantics to be more restrictive, but AFAIK
     // it is okay if we let null take any value in our language as input
     let exp = lexpr::from_str("(null? 3)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 }
 
 #[test]
@@ -218,22 +197,19 @@ fn test_typecheck_lists_sad() {
 fn test_typecheck_tuples_happy() {
     let exp = lexpr::from_str(r#"(make-tuple)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Tuple(vector![])));
+    assert_eq!(typed_exp.typ, Type::Tuple(vector![]));
 
     let exp = lexpr::from_str(r#"(make-tuple 3 "hello")"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::Tuple(vector![Type::Int, Type::Str]))
-    );
+    assert_eq!(typed_exp.typ, Type::Tuple(vector![Type::Int, Type::Str]));
 
     let exp = lexpr::from_str(r#"(tuple-ref (make-tuple 3 "hello") 0)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str(r#"(tuple-ref (make-tuple 3 "hello") 1)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Str));
+    assert_eq!(typed_exp.typ, Type::Str);
 }
 
 #[test]
@@ -273,36 +249,36 @@ fn test_typecheck_tuples_sad() {
 fn test_typecheck_records_happy() {
     let exp = lexpr::from_str(r#"(make-record)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Record(vector![])));
+    assert_eq!(typed_exp.typ, Type::Record(vector![]));
 
     let exp = lexpr::from_str(r#"(make-record (num 3) (name "hello"))"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::Record(vector![
+        typed_exp.typ,
+        Type::Record(vector![
             (String::from("num"), Type::Int),
             (String::from("name"), Type::Str)
-        ]))
+        ])
     );
 
     let exp = lexpr::from_str(r#"(let ((bar 3)) (make-record (foo bar)))"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::Record(vector![(String::from("foo"), Type::Int)]))
+        typed_exp.typ,
+        Type::Record(vector![(String::from("foo"), Type::Int)])
     );
 
     let exp = lexpr::from_str(r#"(record-ref (make-record (num 3) (name "hello")) num)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str(r#"(record-ref (make-record (num 3) (name "hello")) name)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Str));
+    assert_eq!(typed_exp.typ, Type::Str);
 
     let exp = lexpr::from_str(r#"(let ((a (make-record (b 3)))) (record-ref a b))"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 }
 
 #[test]
@@ -342,11 +318,11 @@ fn test_typecheck_records_sad() {
 fn test_typecheck_let_happy() {
     let exp = lexpr::from_str("(let ((x 23)) (+ x 24))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("(let ((x 3) (y 5)) (+ x y))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 }
 
 #[test]
@@ -361,15 +337,15 @@ fn test_typecheck_let_sad() {
 fn test_typecheck_sideeffects_happy() {
     let exp = lexpr::from_str("(begin (+ 3 5))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("(begin (+ 3 5) (- 4 1))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("(let ((x 3)) (set! x 7))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 }
 
 #[test]
@@ -400,7 +376,7 @@ fn test_typecheck_local_scoping() {
     )
     .unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     // binding from let lasts past its scope
     let exp = lexpr::from_str("(+ (let ((x 5)) (+ x 3)) x)").unwrap();
@@ -415,13 +391,13 @@ fn test_typecheck_local_scoping() {
     // let bindings with same names of conflicting types
     let exp = lexpr::from_str("(and (let ((x 5)) (< x 3)) (let ((x false)) (or x true)))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     // lambda bindings with same names of conflicting types
     let exp =
         lexpr::from_str("(and ((lambda ((x : int)) : bool (< x 3)) 5) ((lambda ((x : bool)) : bool (and x true)) false))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     // using set! after variable goes out of scope
     let exp = lexpr::from_str("(begin (let ((x 3)) (+ x 5)) (set! x 7))").unwrap();
@@ -433,7 +409,7 @@ fn test_typecheck_local_scoping() {
 fn test_test_typecheck_if_happy() {
     let exp = lexpr::from_str(r#"(if (< 3 4) 1 -1)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 }
 
 #[test]
@@ -453,26 +429,20 @@ fn test_typecheck_if_sad() {
 fn test_typecheck_lambda_happy() {
     let exp = lexpr::from_str("(lambda () : int 3)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::Func(vector![], Box::new(Type::Int)))
-    );
+    assert_eq!(typed_exp.typ, Type::Func(vector![], Box::new(Type::Int)));
 
     let exp = lexpr::from_str("(lambda ((x : int)) : bool (< x 5))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::Func(vector![Type::Int], Box::new(Type::Bool)))
+        typed_exp.typ,
+        Type::Func(vector![Type::Int], Box::new(Type::Bool))
     );
 
     let exp = lexpr::from_str("(lambda ((x : int) (y : int)) : int (* x y))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::Func(
-            vector![Type::Int, Type::Int],
-            Box::new(Type::Int)
-        ))
+        typed_exp.typ,
+        Type::Func(vector![Type::Int, Type::Int], Box::new(Type::Int))
     );
 
     let exp =
@@ -480,15 +450,15 @@ fn test_typecheck_lambda_happy() {
             .unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::Func(
+        typed_exp.typ,
+        Type::Func(
             vector![
                 Type::Func(vector![Type::Int, Type::Int], Box::new(Type::Bool)),
                 Type::Int,
                 Type::Int
             ],
             Box::new(Type::Bool)
-        ))
+        )
     );
 }
 
@@ -505,7 +475,7 @@ fn test_typecheck_nested_lambdas() {
     .unwrap();
     let typed_exp = type_check(&exp).unwrap();
     let expected = parse_type(&lexpr::from_str("(-> (-> int int) (-> int))").unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(expected));
+    assert_eq!(typed_exp.typ, expected);
 
     let exp = parse(
         &lexpr::from_str(
@@ -522,7 +492,7 @@ fn test_typecheck_nested_lambdas() {
         parse_type(&lexpr::from_str("(-> (-> int int int int) (-> int (-> int int)))").unwrap())
             .unwrap();
     let typed_exp = type_check(&exp).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(expected));
+    assert_eq!(typed_exp.typ, expected);
 
     let exp = parse(
         &lexpr::from_str(
@@ -535,7 +505,7 @@ fn test_typecheck_nested_lambdas() {
     .unwrap();
     let typed_exp = type_check(&exp).unwrap();
     let expected = parse_type(&lexpr::from_str("int").unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(expected));
+    assert_eq!(typed_exp.typ, expected);
 }
 
 #[test]
@@ -552,8 +522,8 @@ fn test_typecheck_lambdas_recursive_happy() {
     .unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     assert_eq!(
-        typed_exp.checked_type,
-        Some(Type::Func(vector![Type::Int], Box::new(Type::Int)))
+        typed_exp.typ,
+        Type::Func(vector![Type::Int], Box::new(Type::Int))
     );
 }
 
@@ -574,19 +544,19 @@ fn test_typecheck_lambda_sad() {
 fn test_typecheck_apply_happy() {
     let exp = lexpr::from_str("((lambda () : int 3))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("((lambda ((x : int)) : bool (< x 5)) 3)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     let exp = lexpr::from_str("((lambda ((x : int) (y : int)) : int (* x y)) 5 6)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 
     let exp = lexpr::from_str("((lambda ((x : int) (y : int)) : int (* x y)) 5 6)").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Int));
+    assert_eq!(typed_exp.typ, Type::Int);
 }
 
 #[test]
@@ -601,7 +571,7 @@ fn test_typecheck_apply_hof_happy() {
     )
     .unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(Type::Bool));
+    assert_eq!(typed_exp.typ, Type::Bool);
 
     // "map" is recursive, so without implementing type-checking for define,
     // (which would create the binding from "map" to its type signature)
@@ -623,7 +593,7 @@ fn test_typecheck_apply_hof_happy() {
     let mut env = TypeEnv::new();
     env = env.add_binding((String::from("map"), map_type.clone()));
     let typed_exp = tc_with_env(&parse(&exp).unwrap(), &env).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(map_type));
+    assert_eq!(typed_exp.typ, map_type);
 }
 
 #[test]
@@ -650,12 +620,12 @@ fn test_typecheck_pack_happy() {
     let exp = &lexpr::from_str("(pack 3 int (exists T0 T0))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     let typ = parse_type(&lexpr::from_str("(exists T0 T0)").unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(typ));
+    assert_eq!(typed_exp.typ, typ);
 
     let exp = &lexpr::from_str("(pack true bool (exists T0 T0))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     let typ = parse_type(&lexpr::from_str("(exists T0 T0)").unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(typ));
+    assert_eq!(typed_exp.typ, typ);
 
     // function
     let exp =
@@ -663,7 +633,7 @@ fn test_typecheck_pack_happy() {
             .unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     let typ = parse_type(&lexpr::from_str("(exists T0 (-> T0 T0))").unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(typ));
+    assert_eq!(typed_exp.typ, typ);
 
     // slightly more specific type ascription
     let exp =
@@ -671,7 +641,7 @@ fn test_typecheck_pack_happy() {
             .unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     let typ = parse_type(&lexpr::from_str("(exists T0 (-> T0 int))").unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(typ));
+    assert_eq!(typed_exp.typ, typ);
 
     // packing a record expression
     let exp = lexpr::from_str(
@@ -685,7 +655,7 @@ fn test_typecheck_pack_happy() {
     let typ =
         parse_type(&lexpr::from_str("(exists T0 (record (a : T0) (f : (-> T0 int))))").unwrap())
             .unwrap();
-    assert_eq!(typed_exp.checked_type, Some(typ));
+    assert_eq!(typed_exp.typ, typ);
 }
 
 #[test]
@@ -721,7 +691,7 @@ fn test_typecheck_unpack_happy() {
     .unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     let typ = parse_type(&lexpr::from_str("int").unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(typ));
+    assert_eq!(typed_exp.typ, typ);
 
     let exp = lexpr::from_str(
         r#"(let ((p (pack (make-record (a 0)
@@ -737,7 +707,7 @@ fn test_typecheck_unpack_happy() {
     .unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     let typ = parse_type(&lexpr::from_str("int").unwrap()).unwrap();
-    assert_eq!(typed_exp.checked_type, Some(typ));
+    assert_eq!(typed_exp.typ, typ);
 }
 
 #[test]
@@ -800,5 +770,5 @@ fn test_typecheck_adt() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(typed_exp.checked_type, Some(typ));
+    assert_eq!(typed_exp.typ, typ);
 }

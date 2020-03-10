@@ -12,7 +12,7 @@ use wasmer_runtime::{imports, instantiate, Value};
 /// Does not assume that the Expr has been type checked.
 fn test_runner(exp: Expr, test_name: &str) -> Value {
     let typed_exp = type_check(&exp).unwrap();
-    let exp_type = typed_exp.checked_type.clone().unwrap();
+    let exp_type = typed_exp.typ.clone();
     let mut state = CodeGenerateState::default();
     let instructions = dbg!(gen_instr(&typed_exp, &mut state).unwrap());
     let module = construct_module(

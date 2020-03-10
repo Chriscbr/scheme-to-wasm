@@ -1,6 +1,6 @@
 // TODO: a lot of the error handling within the code generator could be
 // simplified if we had guaranteed type information within the nodes we are
-// annotating, i.e. if Expr.checked_type was of type Type, and not
+// annotating, i.e. if Expr.typ was of type Type, and not
 // Option<Type>. This could be resolved by refactoring the type checker to
 // produce a specific typed expression structure, (e.g. TExpr), and modifying
 // the closure converter to operate on this type. This hypothetically would
@@ -8,7 +8,7 @@
 // expressions that haven't been typed checked). But it would also help provide
 // more guarantees that our code is correct.
 
-use crate::common::{BinOp, Expr, ExprKind};
+use crate::common::{BinOp, ExprKind, TypedExpr};
 use crate::types::Type;
 
 use std::cmp::Ordering;
@@ -113,8 +113,8 @@ fn wasm_size_of(typ: &Type) -> u32 {
 
 fn gen_instr_binop(
     op: BinOp,
-    arg1: &Expr,
-    arg2: &Expr,
+    arg1: &TypedExpr,
+    arg2: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     match op {
@@ -178,21 +178,16 @@ fn gen_instr_binop(
 }
 
 fn gen_instr_if(
-    pred: &Expr,
-    cons: &Expr,
-    alt: &Expr,
+    pred: &TypedExpr,
+    cons: &TypedExpr,
+    alt: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let pred_instr = gen_instr(pred, state)?;
     let cons_instr = gen_instr(cons, state)?;
     let alt_instr = gen_instr(alt, state)?;
 
-    let cons_type = cons
-        .checked_type
-        .clone()
-        .ok_or_else(|| CodeGenerateError::from("If consequent does not have type annotation."))?;
-
-    let block_type = BlockType::Value(cons_type.into());
+    let block_type = BlockType::Value(cons.typ.clone().into());
     Ok([
         pred_instr,
         vec![Instruction::If(block_type)],
@@ -206,21 +201,17 @@ fn gen_instr_if(
 
 /// Generate instructions for a let expression.
 fn gen_instr_let(
-    bindings: &Vector<(String, Expr)>,
-    body: &Expr,
+    bindings: &Vector<(String, TypedExpr)>,
+    body: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut let_instr: Vec<Instruction> = vec![];
     for pair in bindings {
         let local_index = state.locals.len() as u32;
-        let exp_type =
-            pair.1.checked_type.clone().ok_or_else(|| {
-                CodeGenerateError::from("Let binding does not have type annotation.")
-            })?;
         let mut exp_instr = gen_instr(&pair.1, state)?;
         state
             .locals
-            .insert(pair.0.clone(), (local_index, exp_type.into()));
+            .insert(pair.0.clone(), (local_index, pair.1.typ.clone().into()));
         let_instr.append(&mut exp_instr);
         let_instr.push(Instruction::SetLocal(local_index));
     }
@@ -231,7 +222,7 @@ fn gen_instr_let(
 
 /// Generate instructions for a begin expression.
 fn gen_instr_begin(
-    exps: &Vector<Expr>,
+    exps: &Vector<TypedExpr>,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     if exps.is_empty() {
@@ -255,7 +246,7 @@ fn gen_instr_begin(
 /// Generate instructions for a set! expression.
 fn gen_instr_set(
     sym: &str,
-    exp: &Expr,
+    exp: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut set_instr: Vec<Instruction> = vec![];
@@ -291,7 +282,7 @@ fn gen_instr_set(
 /// Stack:
 /// [ 12 ]
 fn gen_instr_tuple(
-    exprs: &Vector<Expr>,
+    exprs: &Vector<TypedExpr>,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut tuple_instr: Vec<Instruction> = vec![];
@@ -317,12 +308,9 @@ fn gen_instr_tuple(
         tuple_instr.push(Instruction::I32Const(0));
 
         let mut exp_instr = gen_instr(exp, state)?;
-        let exp_type = exp.checked_type.clone().ok_or_else(|| {
-            CodeGenerateError::from("Tuple component does not have type annotation.")
-        })?;
-        tuple_wasm_size += wasm_size_of(&exp_type);
+        tuple_wasm_size += wasm_size_of(&exp.typ);
         tuple_instr.append(&mut exp_instr);
-        tuple_part_wasm_types.push(exp_type.into());
+        tuple_part_wasm_types.push(exp.typ.clone().into());
     }
 
     // Allocate the stack values into linear memory by processing through them
@@ -366,25 +354,21 @@ fn gen_instr_tuple(
 /// manner. Try calculating curr_mem_offset by summing the first (key - 1)
 /// sizes of the tuple's types converted to wasm types.
 fn gen_instr_tuple_get(
-    tuple: &Expr,
+    tuple: &TypedExpr,
     key: u64,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let tuple_instr = gen_instr(tuple, state)?;
-    let tuple_type = tuple
-        .checked_type
-        .clone()
-        .ok_or_else(|| CodeGenerateError::from("Tuple does not have type annotation."))?;
     let mut tuple_get_instr: Vec<Instruction> = vec![];
     let mut curr_key: u64 = 0;
     let mut curr_mem_offset: u32 = 0;
-    match tuple_type {
+    match &tuple.typ {
         Type::Tuple(inner_types) => {
             for typ in inner_types {
                 // TODO: change key to be of type u32?
                 match curr_key.cmp(&key) {
                     Ordering::Equal => {
-                        match typ.into() {
+                        match typ.clone().into() {
                             ValueType::I32 => {
                                 tuple_get_instr.push(Instruction::I32Load(0, curr_mem_offset))
                             }
@@ -425,8 +409,8 @@ fn gen_instr_tuple_get(
 /// stack), and then store the two stack values in memory, leaving an index to
 /// the cons pair on the stack.
 fn gen_instr_cons(
-    first: &Expr,
-    rest: &Expr,
+    first: &TypedExpr,
+    rest: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut cons_instr: Vec<Instruction> = vec![];
@@ -437,21 +421,13 @@ fn gen_instr_cons(
     // stored into linear memory (with I32Store or I64Store).
     cons_instr.push(Instruction::I32Const(0));
     let mut first_instr = gen_instr(first, state)?;
-    let first_type = first
-        .checked_type
-        .clone()
-        .ok_or_else(|| CodeGenerateError::from("Car of cons does not have type annotation."))?;
     cons_instr.append(&mut first_instr);
-    let first_wasm_type: ValueType = first_type.into();
+    let first_wasm_type: ValueType = first.typ.clone().into();
 
     // See comment above for why this instruction is needed.
     cons_instr.push(Instruction::I32Const(0));
     let mut rest_instr = gen_instr(rest, state)?;
-    let rest_type = rest
-        .checked_type
-        .clone()
-        .ok_or_else(|| CodeGenerateError::from("Cdr of cons does not have type annotation."))?;
-    match rest_type.into() {
+    match rest.typ.clone().into() {
         ValueType::I32 => (),
         _ => {
             return Err(CodeGenerateError::from(
@@ -488,18 +464,14 @@ fn gen_instr_cons(
 
 /// Generate instructions for a car expression.
 fn gen_instr_car(
-    cons: &Expr,
+    cons: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut car_instr = gen_instr(cons, state)?;
     // cons expressions should always return a 32-bit pointer, so the
     // offset argument required for I32Load should be on the stack ready to use
-    let cons_type = cons
-        .checked_type
-        .clone()
-        .ok_or_else(|| CodeGenerateError::from("Cons does not have type annotation."))?;
-    let car_type = match cons_type {
-        Type::List(inner_type) => *inner_type,
+    let car_type = match &cons.typ {
+        Type::List(inner_type) => (**inner_type).clone(),
         _ => {
             return Err(CodeGenerateError::from(
                 "Cons has an invalid type annotation.",
@@ -521,18 +493,14 @@ fn gen_instr_car(
 
 /// Generate instructions for a cdr expression.
 fn gen_instr_cdr(
-    cons: &Expr,
+    cons: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut cdr_instr = gen_instr(cons, state)?;
     // cons expressions should always return a 32-bit pointer, so the
     // offset argument required for I32Load should be on the stack ready to use
-    let cons_type = cons
-        .checked_type
-        .clone()
-        .ok_or_else(|| CodeGenerateError::from("Cons does not have type annotation."))?;
-    let car_type = match cons_type {
-        Type::List(inner_type) => *inner_type,
+    let car_type = match &cons.typ {
+        Type::List(inner_type) => (**inner_type).clone(),
         _ => {
             return Err(CodeGenerateError::from(
                 "Cons has an invalid type annotation.",
@@ -580,15 +548,11 @@ fn gen_instr_null(
 /// still calculate it in case some kind of useful / effect-ful computation
 /// is being performed.
 fn gen_instr_is_null(
-    exp: &Expr,
+    exp: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut exp_instr = gen_instr(exp, state)?;
-    let exp_type = exp
-        .checked_type
-        .clone()
-        .ok_or_else(|| CodeGenerateError::from("null? argument does not have type annotation."))?;
-    match exp_type {
+    match &exp.typ {
         Type::List(_inner_type) => {
             exp_instr.push(Instruction::I32Const(-1)); // all (null 'typ) expressions are represented as I32Const(-1)
             exp_instr.push(Instruction::I32Eq);
@@ -603,7 +567,7 @@ fn gen_instr_is_null(
 }
 
 pub fn gen_instr(
-    exp: &Expr,
+    exp: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let instructions: Result<Vec<Instruction>, CodeGenerateError> = match &*exp.kind {

@@ -191,7 +191,7 @@ fn parse_binop(op: &str, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         "concat" => BinOp::Concat,
         _ => return Err(ParseError::from("Unrecognized binary operator.")),
     };
-    Ok(Expr::new(None, ExprKind::Binop(operator, exp1, exp2)))
+    Ok(Expr::new(ExprKind::Binop(operator, exp1, exp2)))
 }
 
 fn parse_if(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -203,10 +203,7 @@ fn parse_if(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let predicate = parse(&rest[0])?;
     let consequent = parse(&rest[1])?;
     let alternate = parse(&rest[2])?;
-    Ok(Expr::new(
-        None,
-        ExprKind::If(predicate, consequent, alternate),
-    ))
+    Ok(Expr::new(ExprKind::If(predicate, consequent, alternate)))
 }
 
 fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -237,7 +234,7 @@ fn parse_let(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         })
         .collect::<Result<Vector<(String, Expr)>, ParseError>>()?;
     let body = parse(&rest[1])?;
-    Ok(Expr::new(None, ExprKind::Let(bindings_vec, body)))
+    Ok(Expr::new(ExprKind::Let(bindings_vec, body)))
 }
 
 fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -252,7 +249,7 @@ fn parse_lambda(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     }
     let ret_type = parse_type(&rest[2])?;
     let body = parse(&rest[3])?;
-    Ok(Expr::new(None, ExprKind::Lambda(args, ret_type, body)))
+    Ok(Expr::new(ExprKind::Lambda(args, ret_type, body)))
 }
 
 fn unwrap_lambda_args(args: &lexpr::Value) -> Result<Vector<(String, Type)>, ParseError> {
@@ -304,7 +301,7 @@ fn parse_make_record(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
             Ok((String::from(binding_name), binding_val))
         })
         .collect::<Result<Vector<(String, Expr)>, ParseError>>()?;
-    Ok(Expr::new(None, ExprKind::Record(bindings_vec)))
+    Ok(Expr::new(ExprKind::Record(bindings_vec)))
 }
 
 fn parse_get_record(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -317,10 +314,7 @@ fn parse_get_record(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let key = rest[1]
         .as_symbol()
         .ok_or_else(|| "Env-ref key is not a valid identifier.")?;
-    Ok(Expr::new(
-        None,
-        ExprKind::RecordGet(bindings, String::from(key)),
-    ))
+    Ok(Expr::new(ExprKind::RecordGet(bindings, String::from(key))))
 }
 
 fn parse_begin(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -328,7 +322,7 @@ fn parse_begin(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         return Err(ParseError::from("Begin expression has no arguments."));
     }
     let exps = parse_array(&rest)?;
-    Ok(Expr::new(None, ExprKind::Begin(exps)))
+    Ok(Expr::new(ExprKind::Begin(exps)))
 }
 
 fn parse_set_bang(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -341,7 +335,7 @@ fn parse_set_bang(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         .as_symbol()
         .ok_or_else(|| "Set expression does not have a symbol as its first argument.")?;
     let new_val = parse(&rest[1])?;
-    Ok(Expr::new(None, ExprKind::Set(String::from(var), new_val)))
+    Ok(Expr::new(ExprKind::Set(String::from(var), new_val)))
 }
 
 fn parse_cons(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -352,7 +346,7 @@ fn parse_cons(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     }
     let first = parse(&rest[0])?;
     let second = parse(&rest[1])?;
-    Ok(Expr::new(None, ExprKind::Cons(first, second)))
+    Ok(Expr::new(ExprKind::Cons(first, second)))
 }
 
 fn parse_car(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -362,7 +356,7 @@ fn parse_car(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ));
     }
     let pair = parse(&rest[0])?;
-    Ok(Expr::new(None, ExprKind::Car(pair)))
+    Ok(Expr::new(ExprKind::Car(pair)))
 }
 
 fn parse_cdr(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -372,7 +366,7 @@ fn parse_cdr(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ));
     }
     let pair = parse(&rest[0])?;
-    Ok(Expr::new(None, ExprKind::Cdr(pair)))
+    Ok(Expr::new(ExprKind::Cdr(pair)))
 }
 
 fn parse_is_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -382,7 +376,7 @@ fn parse_is_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ));
     }
     let val = parse(&rest[0])?;
-    Ok(Expr::new(None, ExprKind::IsNull(val)))
+    Ok(Expr::new(ExprKind::IsNull(val)))
 }
 
 fn parse_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -392,18 +386,18 @@ fn parse_null(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ));
     }
     let val = parse_type(&rest[0])?;
-    Ok(Expr::new(None, ExprKind::Null(val)))
+    Ok(Expr::new(ExprKind::Null(val)))
 }
 
 fn parse_func(first: &lexpr::Value, rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let func = parse(first)?;
     let args = parse_array(rest)?;
-    Ok(Expr::new(None, ExprKind::FnApp(func, args)))
+    Ok(Expr::new(ExprKind::FnApp(func, args)))
 }
 
 fn parse_make_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let exps = parse_array(&rest)?;
-    Ok(Expr::new(None, ExprKind::Tuple(exps)))
+    Ok(Expr::new(ExprKind::Tuple(exps)))
 }
 
 fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -416,7 +410,7 @@ fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let key = rest[1]
         .as_u64()
         .ok_or_else(|| "Second argument in tuple-ref is not an integer.")?;
-    Ok(Expr::new(None, ExprKind::TupleGet(tuple, key)))
+    Ok(Expr::new(ExprKind::TupleGet(tuple, key)))
 }
 
 fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -428,7 +422,7 @@ fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let package = parse(&rest[0])?;
     let typ_sub = parse_type(&rest[1])?;
     let exist_typ = parse_type(&rest[2])?;
-    Ok(Expr::new(None, ExprKind::Pack(package, typ_sub, exist_typ)))
+    Ok(Expr::new(ExprKind::Pack(package, typ_sub, exist_typ)))
 }
 
 fn parse_unpack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
@@ -464,10 +458,9 @@ fn parse_unpack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         }
     };
     let body: Expr = parse(&rest[1])?;
-    Ok(Expr::new(
-        None,
-        ExprKind::Unpack(var_name, package, typ_var, body),
-    ))
+    Ok(Expr::new(ExprKind::Unpack(
+        var_name, package, typ_var, body,
+    )))
 }
 
 pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
@@ -475,7 +468,7 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
         lexpr::Value::Number(x) => match x.as_i64() {
             Some(val) => {
                 if val >= i32::min_value() as i64 && val <= i32::max_value() as i64 {
-                    Ok(Expr::new(None, ExprKind::Num(val as i32)))
+                    Ok(Expr::new(ExprKind::Num(val as i32)))
                 } else {
                     Err(ParseError::from(
                         "Invalid number found (must be a 32-bit integer).",
@@ -486,8 +479,8 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
                 "Invalid number found (must be a 32-bit integer).",
             )),
         },
-        lexpr::Value::Bool(x) => Ok(Expr::new(None, ExprKind::Bool(*x))),
-        lexpr::Value::String(x) => Ok(Expr::new(None, ExprKind::Str((*x).to_string()))),
+        lexpr::Value::Bool(x) => Ok(Expr::new(ExprKind::Bool(*x))),
+        lexpr::Value::String(x) => Ok(Expr::new(ExprKind::Str((*x).to_string()))),
         lexpr::Value::Cons(_) => {
             let lst = value
                 .to_vec()
@@ -530,9 +523,9 @@ pub fn parse(value: &lexpr::Value) -> Result<Expr, ParseError> {
             }
         }
         lexpr::Value::Symbol(x) => match &x[..] {
-            "true" => Ok(Expr::new(None, ExprKind::Bool(true))),
-            "false" => Ok(Expr::new(None, ExprKind::Bool(false))),
-            symbol => Ok(Expr::new(None, ExprKind::Id(symbol.to_string()))),
+            "true" => Ok(Expr::new(ExprKind::Bool(true))),
+            "false" => Ok(Expr::new(ExprKind::Bool(false))),
+            symbol => Ok(Expr::new(ExprKind::Id(symbol.to_string()))),
         },
         _ => Err(ParseError::from("Unrecognized form of expression found.")),
     }

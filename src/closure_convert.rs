@@ -96,9 +96,9 @@ fn cc_lambda(
     // (x, Id(x)) (y, Id(y)) ...
     let env_contents: Vector<(String, Expr)> = free_vars
         .iter()
-        .map(|var| (var.clone(), Expr::new(None, ExprKind::Id(var.clone()))))
+        .map(|var| (var.clone(), Expr::new(ExprKind::Id(var.clone()))))
         .collect();
-    let new_env = Expr::new(None, ExprKind::Record(env_contents));
+    let new_env = Expr::new(ExprKind::Record(env_contents));
 
     // Substitute free variables in the body with references to the environment
     // ex. if y is free, replace it with (env-ref envX y)
@@ -106,10 +106,10 @@ fn cc_lambda(
         new_body = substitute(
             &new_body,
             &var.clone(),
-            &Expr::new(
-                None,
-                ExprKind::RecordGet(Expr::new(None, ExprKind::Id(env_name.clone())), var.clone()),
-            ),
+            &Expr::new(ExprKind::RecordGet(
+                Expr::new(ExprKind::Id(env_name.clone())),
+                var.clone(),
+            )),
         )?;
     }
 
@@ -142,16 +142,17 @@ fn cc_lambda(
 
     let new_ret_typ = cc_type(&ret_type.clone())?;
 
-    let new_lambda = Expr::new(None, ExprKind::Lambda(new_params, new_ret_typ, new_body));
+    let new_lambda = Expr::new(ExprKind::Lambda(new_params, new_ret_typ, new_body));
 
     let orig_param_typs = params.clone().iter().map(|pair| pair.1.clone()).collect();
     let new_lambda_typ = cc_type(&Type::Func(orig_param_typs, Box::new(ret_type.clone())))?;
 
-    let new_closure = Expr::new(None, ExprKind::Tuple(vector![new_lambda, new_env]));
-    Ok(Expr::new(
-        None,
-        ExprKind::Pack(new_closure, record_typ, new_lambda_typ),
-    ))
+    let new_closure = Expr::new(ExprKind::Tuple(vector![new_lambda, new_env]));
+    Ok(Expr::new(ExprKind::Pack(
+        new_closure,
+        record_typ,
+        new_lambda_typ,
+    )))
 }
 
 fn cc_fn_app(
@@ -160,21 +161,20 @@ fn cc_fn_app(
     env: &TypeEnv<Type>,
 ) -> Result<Expr, ClosureConvertError> {
     let tuple_name = generate_var_name();
-    let tuple_name_id = Expr::new(None, ExprKind::Id(tuple_name.clone()));
+    let tuple_name_id = Expr::new(ExprKind::Id(tuple_name.clone()));
     let package = cc(func, env)?;
     let typ_var = generate_id();
-    let tuple_func = Expr::new(None, ExprKind::TupleGet(tuple_name_id.clone(), 0));
-    let tuple_env = Expr::new(None, ExprKind::TupleGet(tuple_name_id, 1));
+    let tuple_func = Expr::new(ExprKind::TupleGet(tuple_name_id.clone(), 0));
+    let tuple_env = Expr::new(ExprKind::TupleGet(tuple_name_id, 1));
     let cc_args = args
         .iter()
         .map(|arg| cc(arg, env))
         .collect::<Result<Vector<Expr>, ClosureConvertError>>()?;
     let new_args = vector![tuple_env] + cc_args;
-    let body = Expr::new(None, ExprKind::FnApp(tuple_func, new_args));
-    Ok(Expr::new(
-        None,
-        ExprKind::Unpack(tuple_name, package, typ_var, body),
-    ))
+    let body = Expr::new(ExprKind::FnApp(tuple_func, new_args));
+    Ok(Expr::new(ExprKind::Unpack(
+        tuple_name, package, typ_var, body,
+    )))
 }
 
 fn substitute_array(
@@ -196,14 +196,14 @@ fn substitute(
         ExprKind::Binop(op, arg1, arg2) => {
             substitute(&arg1, match_exp, replace_with).and_then(|sarg1| {
                 substitute(&arg2, match_exp, replace_with)
-                    .and_then(|sarg2| Ok(Expr::new(None, ExprKind::Binop(*op, sarg1, sarg2))))
+                    .and_then(|sarg2| Ok(Expr::new(ExprKind::Binop(*op, sarg1, sarg2))))
             })
         }
         ExprKind::If(pred, cons, alt) => {
             substitute(&pred, match_exp, replace_with).and_then(|spred| {
                 substitute(&cons, match_exp, replace_with).and_then(|scons| {
                     substitute(&alt, match_exp, replace_with)
-                        .and_then(|salt| Ok(Expr::new(None, ExprKind::If(spred, scons, salt))))
+                        .and_then(|salt| Ok(Expr::new(ExprKind::If(spred, scons, salt))))
                 })
             })
         }
@@ -217,7 +217,7 @@ fn substitute(
                 .collect();
             let bindings_sub: Vector<(String, Expr)> = bindings_sub?;
             substitute(&body, match_exp, replace_with)
-                .and_then(|sbody| Ok(Expr::new(None, ExprKind::Let(bindings_sub, sbody))))
+                .and_then(|sbody| Ok(Expr::new(ExprKind::Let(bindings_sub, sbody))))
         }
         ExprKind::Lambda(params, ret_type, body) => {
             let param_names: Vector<String> = params.iter().map(|pair| pair.0.clone()).collect();
@@ -229,21 +229,23 @@ fn substitute(
                     }
                 }
                 let sbody = substitute(&body, match_exp, replace_with)?;
-                Ok(Expr::new(
-                    None,
-                    ExprKind::Lambda(params.clone(), ret_type.clone(), sbody),
-                ))
+                Ok(Expr::new(ExprKind::Lambda(
+                    params.clone(),
+                    ret_type.clone(),
+                    sbody,
+                )))
             } else {
-                Ok(Expr::new(
-                    None,
-                    ExprKind::Lambda(params.clone(), ret_type.clone(), body.clone()),
-                ))
+                Ok(Expr::new(ExprKind::Lambda(
+                    params.clone(),
+                    ret_type.clone(),
+                    body.clone(),
+                )))
             }
         }
         ExprKind::FnApp(func, args) => {
             substitute(&func, match_exp, replace_with).and_then(|sfunc| {
                 substitute_array(&args, match_exp, replace_with)
-                    .and_then(|sargs| Ok(Expr::new(None, ExprKind::FnApp(sfunc, sargs))))
+                    .and_then(|sargs| Ok(Expr::new(ExprKind::FnApp(sfunc, sargs))))
             })
         }
         ExprKind::Record(bindings) => {
@@ -254,54 +256,50 @@ fn substitute(
                         .and_then(|sexp| Ok((pair.0.clone(), sexp)))
                 })
                 .collect::<Result<Vector<(String, Expr)>, ClosureConvertError>>()?;
-            Ok(Expr::new(None, ExprKind::Record(cbindings)))
+            Ok(Expr::new(ExprKind::Record(cbindings)))
         }
         ExprKind::RecordGet(record, key) => substitute(&record, match_exp, replace_with)
-            .and_then(|srecord| Ok(Expr::new(None, ExprKind::RecordGet(srecord, key.clone())))),
+            .and_then(|srecord| Ok(Expr::new(ExprKind::RecordGet(srecord, key.clone())))),
         ExprKind::Begin(exps) => substitute_array(&exps, match_exp, replace_with)
-            .and_then(|sexps| Ok(Expr::new(None, ExprKind::Begin(sexps)))),
+            .and_then(|sexps| Ok(Expr::new(ExprKind::Begin(sexps)))),
         ExprKind::Set(var, val) => substitute(&val, match_exp, replace_with)
-            .and_then(|sval| Ok(Expr::new(None, ExprKind::Set(var.clone(), sval)))),
+            .and_then(|sval| Ok(Expr::new(ExprKind::Set(var.clone(), sval)))),
         ExprKind::Cons(first, second) => {
             substitute(&first, match_exp, replace_with).and_then(|sfirst| {
                 substitute(&second, match_exp, replace_with)
-                    .and_then(|ssecond| Ok(Expr::new(None, ExprKind::Cons(sfirst, ssecond))))
+                    .and_then(|ssecond| Ok(Expr::new(ExprKind::Cons(sfirst, ssecond))))
             })
         }
         ExprKind::Car(val) => substitute(&val, match_exp, replace_with)
-            .and_then(|sval| Ok(Expr::new(None, ExprKind::Car(sval)))),
+            .and_then(|sval| Ok(Expr::new(ExprKind::Car(sval)))),
         ExprKind::Cdr(val) => substitute(&val, match_exp, replace_with)
-            .and_then(|sval| Ok(Expr::new(None, ExprKind::Cdr(sval)))),
+            .and_then(|sval| Ok(Expr::new(ExprKind::Cdr(sval)))),
         ExprKind::Tuple(vals) => substitute_array(&vals, match_exp, replace_with)
-            .and_then(|svals| Ok(Expr::new(None, ExprKind::Tuple(svals)))),
+            .and_then(|svals| Ok(Expr::new(ExprKind::Tuple(svals)))),
         ExprKind::TupleGet(tuple, key) => substitute(&tuple, match_exp, replace_with)
-            .and_then(|stuple| Ok(Expr::new(None, ExprKind::TupleGet(stuple, *key)))),
-        ExprKind::Pack(val, sub, exist) => {
-            substitute(&val, match_exp, replace_with).and_then(|sval| {
-                Ok(Expr::new(
-                    None,
-                    ExprKind::Pack(sval, sub.clone(), exist.clone()),
-                ))
-            })
-        }
+            .and_then(|stuple| Ok(Expr::new(ExprKind::TupleGet(stuple, *key)))),
+        ExprKind::Pack(val, sub, exist) => substitute(&val, match_exp, replace_with)
+            .and_then(|sval| Ok(Expr::new(ExprKind::Pack(sval, sub.clone(), exist.clone())))),
         ExprKind::Unpack(var, package, typ_sub, body) => {
             substitute(&package, match_exp, replace_with).and_then(|spackage| {
                 substitute(&body, match_exp, replace_with).and_then(|sbody| {
-                    Ok(Expr::new(
-                        None,
-                        ExprKind::Unpack(var.clone(), spackage, *typ_sub, sbody),
-                    ))
+                    Ok(Expr::new(ExprKind::Unpack(
+                        var.clone(),
+                        spackage,
+                        *typ_sub,
+                        sbody,
+                    )))
                 })
             })
         }
         ExprKind::IsNull(val) => substitute(&val, match_exp, replace_with)
-            .and_then(|sval| Ok(Expr::new(None, ExprKind::IsNull(sval)))),
+            .and_then(|sval| Ok(Expr::new(ExprKind::IsNull(sval)))),
         ExprKind::Null(_) => Ok(exp.clone()),
         ExprKind::Id(x) => {
             if x == match_exp {
                 Ok(replace_with.clone())
             } else {
-                Ok(Expr::new(None, ExprKind::Id(x.clone())))
+                Ok(Expr::new(ExprKind::Id(x.clone())))
             }
         }
         ExprKind::Num(_) => Ok(exp.clone()),
@@ -387,16 +385,16 @@ pub fn closure_convert(exp: &Expr) -> Result<Expr, ClosureConvertError> {
 /// of all new lambdas).
 fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
     match &*exp.kind {
-        ExprKind::Num(x) => Ok(Expr::new(None, ExprKind::Num(*x))),
-        ExprKind::Bool(x) => Ok(Expr::new(None, ExprKind::Bool(*x))),
-        ExprKind::Str(x) => Ok(Expr::new(None, ExprKind::Str(x.clone()))),
-        ExprKind::Id(x) => Ok(Expr::new(None, ExprKind::Id(x.clone()))),
+        ExprKind::Num(x) => Ok(Expr::new(ExprKind::Num(*x))),
+        ExprKind::Bool(x) => Ok(Expr::new(ExprKind::Bool(*x))),
+        ExprKind::Str(x) => Ok(Expr::new(ExprKind::Str(x.clone()))),
+        ExprKind::Id(x) => Ok(Expr::new(ExprKind::Id(x.clone()))),
         ExprKind::Binop(op, arg1, arg2) => cc(&arg1, env).and_then(|carg1| {
-            cc(&arg2, env).and_then(|carg2| Ok(Expr::new(None, ExprKind::Binop(*op, carg1, carg2))))
+            cc(&arg2, env).and_then(|carg2| Ok(Expr::new(ExprKind::Binop(*op, carg1, carg2))))
         }),
         ExprKind::If(pred, cons, alt) => cc(&pred, env).and_then(|cpred| {
             cc(&cons, env).and_then(|ccons| {
-                cc(&alt, env).and_then(|calt| Ok(Expr::new(None, ExprKind::If(cpred, ccons, calt))))
+                cc(&alt, env).and_then(|calt| Ok(Expr::new(ExprKind::If(cpred, ccons, calt))))
             })
         }),
         ExprKind::Let(bindings, body) => {
@@ -406,14 +404,7 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
             let binding_type_map = cbindings
                 .iter()
                 .map(|pair| match type_check(&pair.1) {
-                    Ok(typed_exp) => Ok((
-                        pair.0.clone(),
-                        typed_exp.checked_type.ok_or_else(|| {
-                            ClosureConvertError::from(
-                                "Binding expression does not have type annotation.",
-                            )
-                        })?,
-                    )),
+                    Ok(typed_exp) => Ok((pair.0.clone(), typed_exp.typ)),
                     Err(e) => Err(ClosureConvertError(format!(
                         "Type checking error during closure conversion: {}",
                         e
@@ -421,50 +412,49 @@ fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
                 })
                 .collect::<Result<Vector<(String, Type)>, ClosureConvertError>>()?;
             cc(&body, &env.add_bindings(binding_type_map))
-                .and_then(|cbody| Ok(Expr::new(None, ExprKind::Let(cbindings, cbody))))
+                .and_then(|cbody| Ok(Expr::new(ExprKind::Let(cbindings, cbody))))
         }
         ExprKind::Lambda(params, ret_typ, body) => cc_lambda(&params, &ret_typ, &body, env),
         ExprKind::Begin(exps) => {
             let cexps_wrapped: Result<Vector<Expr>, ClosureConvertError> =
                 exps.iter().map(|subexp| cc(&subexp, env)).collect();
-            cexps_wrapped.and_then(|cexps| Ok(Expr::new(None, ExprKind::Begin(cexps))))
+            cexps_wrapped.and_then(|cexps| Ok(Expr::new(ExprKind::Begin(cexps))))
         }
         ExprKind::Set(id, val) => {
-            cc(&val, env).and_then(|cval| Ok(Expr::new(None, ExprKind::Set(id.clone(), cval))))
+            cc(&val, env).and_then(|cval| Ok(Expr::new(ExprKind::Set(id.clone(), cval))))
         }
         ExprKind::Cons(first, rest) => cc(&first, env).and_then(|cfirst| {
-            cc(&rest, env).and_then(|crest| Ok(Expr::new(None, ExprKind::Cons(cfirst, crest))))
+            cc(&rest, env).and_then(|crest| Ok(Expr::new(ExprKind::Cons(cfirst, crest))))
         }),
-        ExprKind::Car(val) => {
-            cc(&val, env).and_then(|cval| Ok(Expr::new(None, ExprKind::Car(cval))))
-        }
-        ExprKind::Cdr(val) => {
-            cc(&val, env).and_then(|cval| Ok(Expr::new(None, ExprKind::Cdr(cval))))
-        }
+        ExprKind::Car(val) => cc(&val, env).and_then(|cval| Ok(Expr::new(ExprKind::Car(cval)))),
+        ExprKind::Cdr(val) => cc(&val, env).and_then(|cval| Ok(Expr::new(ExprKind::Cdr(cval)))),
         ExprKind::IsNull(val) => {
-            cc(&val, env).and_then(|cval| Ok(Expr::new(None, ExprKind::IsNull(cval))))
+            cc(&val, env).and_then(|cval| Ok(Expr::new(ExprKind::IsNull(cval))))
         }
-        ExprKind::Null(typ) => Ok(Expr::new(None, ExprKind::Null(cc_type(&typ)?))),
+        ExprKind::Null(typ) => Ok(Expr::new(ExprKind::Null(cc_type(&typ)?))),
         ExprKind::Tuple(exps) => {
             let cexps_wrapped: Result<Vector<Expr>, ClosureConvertError> =
                 exps.iter().map(|subexp| cc(&subexp, env)).collect();
-            cexps_wrapped.and_then(|cexps| Ok(Expr::new(None, ExprKind::Tuple(cexps))))
+            cexps_wrapped.and_then(|cexps| Ok(Expr::new(ExprKind::Tuple(cexps))))
         }
         ExprKind::TupleGet(tuple, key) => {
-            cc(&tuple, env).and_then(|ctuple| Ok(Expr::new(None, ExprKind::TupleGet(ctuple, *key))))
+            cc(&tuple, env).and_then(|ctuple| Ok(Expr::new(ExprKind::TupleGet(ctuple, *key))))
         }
         ExprKind::Record(bindings) => cc_bindings(&bindings, env)
-            .and_then(|cbindings| Ok(Expr::new(None, ExprKind::Record(cbindings)))),
+            .and_then(|cbindings| Ok(Expr::new(ExprKind::Record(cbindings)))),
         ExprKind::RecordGet(record, key) => cc(&record, env)
-            .and_then(|crecord| Ok(Expr::new(None, ExprKind::RecordGet(crecord, key.clone())))),
-        ExprKind::Pack(val, sub, exist) => Ok(Expr::new(
-            None,
-            ExprKind::Pack(cc(&val, env)?, cc_type(&sub)?, cc_type(&exist)?),
-        )),
-        ExprKind::Unpack(var, package, typ_sub, body) => Ok(Expr::new(
-            None,
-            ExprKind::Unpack(var.clone(), cc(&package, env)?, *typ_sub, cc(&body, env)?),
-        )),
+            .and_then(|crecord| Ok(Expr::new(ExprKind::RecordGet(crecord, key.clone())))),
+        ExprKind::Pack(val, sub, exist) => Ok(Expr::new(ExprKind::Pack(
+            cc(&val, env)?,
+            cc_type(&sub)?,
+            cc_type(&exist)?,
+        ))),
+        ExprKind::Unpack(var, package, typ_sub, body) => Ok(Expr::new(ExprKind::Unpack(
+            var.clone(),
+            cc(&package, env)?,
+            *typ_sub,
+            cc(&body, env)?,
+        ))),
         ExprKind::FnApp(func, args) => cc_fn_app(&func, &args, env),
     }
 }
