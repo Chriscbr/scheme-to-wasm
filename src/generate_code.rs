@@ -348,17 +348,16 @@ fn gen_instr_tuple(
 /// sizes of the tuple's types converted to wasm types.
 fn gen_instr_tuple_get(
     tuple: &TypedExpr,
-    key: u64,
+    key: u32,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let tuple_instr = gen_instr(tuple, state)?;
     let mut tuple_get_instr: Vec<Instruction> = vec![];
-    let mut curr_key: u64 = 0;
+    let mut curr_key: u32 = 0;
     let mut curr_mem_offset: u32 = 0;
     match &tuple.typ {
         Type::Tuple(inner_types) => {
             for typ in inner_types {
-                // TODO: change key to be of type u32?
                 match curr_key.cmp(&key) {
                     Ordering::Equal => {
                         match typ.clone().into() {

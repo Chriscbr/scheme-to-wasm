@@ -271,7 +271,7 @@ fn tc_tuple_with_env(
 
 fn tc_tuple_get_with_env(
     tup: &Expr,
-    key: u64,
+    key: u32,
     env: &TypeEnv<Type>,
 ) -> Result<TypedExpr, TypeCheckError> {
     let tup = tc_with_env(tup, env)?;

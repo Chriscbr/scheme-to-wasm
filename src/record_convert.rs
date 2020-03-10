@@ -307,7 +307,7 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
     }
 }
 
-fn get_field_index(record: &TypedExpr, field: &str) -> Result<u64, RecordConvertError> {
+fn get_field_index(record: &TypedExpr, field: &str) -> Result<u32, RecordConvertError> {
     let mut fields_vec: Vec<(String, Type)> = match &record.typ {
         Type::Record(fields) => Ok(fields.iter().cloned().collect()),
         _ => Err(RecordConvertError::from(
@@ -318,6 +318,6 @@ fn get_field_index(record: &TypedExpr, field: &str) -> Result<u64, RecordConvert
     fields_vec
         .iter()
         .position(|pair| pair.0 == field)
-        .map(|val| val as u64)
+        .map(|val| val as u32)
         .ok_or_else(|| RecordConvertError::from("Field not found in record."))
 }

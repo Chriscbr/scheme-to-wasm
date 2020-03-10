@@ -113,7 +113,7 @@ pub enum ExprKind<E: ExprMeta> {
     Null(Type),
     FnApp(E, Vector<E>),         // func, arguments
     Tuple(Vector<E>),            // list of expressions, type annotation
-    TupleGet(E, u64),            // env, index - index must explicitly be a number
+    TupleGet(E, u32),            // env, index - index must explicitly be a number
     Pack(E, Type, Type),         // exp, type substitution, existential type
     Unpack(String, E, u64, E),   // new var, package, type var, body
     Record(Vector<(String, E)>), // map from values to labels

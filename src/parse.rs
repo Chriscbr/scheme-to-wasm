@@ -410,7 +410,7 @@ fn parse_get_tuple(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
     let key = rest[1]
         .as_u64()
         .ok_or_else(|| "Second argument in tuple-ref is not an integer.")?;
-    Ok(Expr::new(ExprKind::TupleGet(tuple, key)))
+    Ok(Expr::new(ExprKind::TupleGet(tuple, key as u32)))
 }
 
 fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
