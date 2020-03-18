@@ -93,10 +93,26 @@ impl TypedExpr {
     }
 }
 
-// TODO: add (not x) operation
-// TODO: add (string-equal? x y) operation
-// TODO: add (incr x) and (decr x) operations
-// TODO: add (set-car! x) and (set-cdr! x) operations
+/// A representation of a kind of expression in our language.
+///
+/// This enum is parameterized over E, a parent expression type such as
+/// `Expr` or `TypedExpr`. The goal behind this abstraction is that we want to
+/// support different kinds of abstract syntax trees (ASTs) whose nodes contain
+/// different kinds of extra information, e.g. untyped trees (`Expr`) with no
+/// extra information, or typed trees (`TypedExpr`), in which each node has
+/// a typed annotation field. However, all of these ASTs will share the same
+/// method of recursive definition, which is through an `ExprKind` type field.
+/// Through this definition, we will still get the type guarantee that children
+/// of a E (Expr, TypedExpr) must also be a corresponding E, without having
+/// to define the ExprKind cases (Binop, If, etc.) in multiple places.
+///
+/// TODO: See if it's possible to add a "kind: ExprKind" field as a requirement
+/// ExprMeta, in a way so that it's then required for both Expr and TypedExpr
+/// and any other expression types that are developed later.
+/// TODO: add (not x) operation
+/// TODO: add (string-equal? x y) operation
+/// TODO: add (incr x) and (decr x) operations
+/// TODO: add (set-car! x) and (set-cdr! x) operations
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprKind<E: ExprMeta> {

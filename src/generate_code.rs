@@ -1,7 +1,7 @@
 // TODO: consider simplifying code generation everywhere, under the assumption
 // that all data is 32-bit, just to minimize code complexity / maintenance
 
-use crate::common::{BinOp, ExprKind, TypedExpr};
+use crate::common::{BinOp, ExprKind, Prog, TypedExpr};
 use crate::types::Type;
 
 use std::cmp::Ordering;
@@ -10,15 +10,6 @@ use std::collections::BTreeMap;
 use im_rc::Vector;
 use parity_wasm::builder;
 use parity_wasm::elements::{BlockType, Instruction, Instructions, Local, Module, ValueType};
-
-/// A key-value map for finding the local variable index and WebAssembly type
-/// associated with a local variable.
-///
-/// Ex. when compiling `(let ((a 3)) (+ a 3))`, the value of `a` will be
-/// stored in a local variable within the WebAssembly function, and the index
-/// needs to be tracked so that it can be provided to the WebAssembly
-/// local.get function when `a` is referenced within the body.
-type LocalsMap = BTreeMap<String, (u32, ValueType)>;
 
 #[derive(Clone, Debug)]
 pub struct CodeGenerateError(String);
@@ -38,6 +29,19 @@ impl std::fmt::Display for CodeGenerateError {
     }
 }
 
+/// A key-value map for finding the local variable index and WebAssembly type
+/// associated with a local variable.
+///
+/// E.g. when compiling `(let ((a 3)) (+ a 3))`, the value of `a` will be
+/// stored in a local variable within the WebAssembly function, and the index
+/// needs to be tracked so that it can be provided to the WebAssembly
+/// local.get function when `a` is referenced within the body.
+type LocalsMap = BTreeMap<String, (u32, ValueType)>;
+
+/// A key-value map for finding the index of a WebAssembly function instance
+/// which is associated with a particular identifier (string).
+type FuncsMap = BTreeMap<String, u32>;
+
 /// Maintains metadata used by code-generating functions.
 ///
 /// The code-generating functions (gen_instr_*) recursively call each other,
@@ -51,6 +55,7 @@ impl std::fmt::Display for CodeGenerateError {
 #[derive(Default)]
 pub struct CodeGenerateState {
     locals: LocalsMap,
+    funcs: FuncsMap,
     mem_index: u32,
 }
 
@@ -58,6 +63,7 @@ impl CodeGenerateState {
     pub fn new() -> Self {
         CodeGenerateState {
             locals: LocalsMap::new(),
+            funcs: FuncsMap::new(),
             mem_index: 0,
         }
     }
@@ -558,11 +564,40 @@ fn gen_instr_is_null(
     }
 }
 
+fn gen_instr_fn_app(
+    func: &TypedExpr,
+    args: &Vector<TypedExpr>,
+    state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    match &*func.kind {
+        ExprKind::Id(name) => {
+            let func_idx: u32 = match state.funcs.get(name) {
+                Some(idx) => *idx,
+                None => {
+                    return Err(CodeGenerateError::from(
+                        "Function name not found in functions maps!",
+                    ))
+                }
+            };
+            let mut fn_app_instr: Vec<Instruction> = vec![];
+            for exp in args {
+                let mut exp_instr = gen_instr(exp, state)?;
+                fn_app_instr.append(&mut exp_instr);
+            }
+            fn_app_instr.push(Instruction::Call(func_idx));
+            Ok(fn_app_instr)
+        }
+        _ => Err(CodeGenerateError::from(
+            "Function application does not appear to be correctly lambda lifted!",
+        )),
+    }
+}
+
 pub fn gen_instr(
     exp: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
-    let instructions: Result<Vec<Instruction>, CodeGenerateError> = match &*exp.kind {
+    let instructions: Result<Vec<Instruction>, CodeGenerateError> = match dbg!(&*exp.kind) {
         ExprKind::Num(x) => Ok(vec![Instruction::I32Const(*x)]),
         ExprKind::Bool(x) => Ok(vec![Instruction::I32Const(*x as i32)]),
         ExprKind::Str(_) => panic!("Unhandled gen_instr case: Str"),
@@ -598,7 +633,7 @@ pub fn gen_instr(
         // ExprKind::Unpack(var, package, typ_sub, body) => {
         //     tc_unpack_with_env(&var, &package, *typ_sub, &body, env)
         // }
-        // ExprKind::FnApp(func, args) => tc_apply_with_env(&func, &args, env),
+        ExprKind::FnApp(func, args) => Ok(gen_instr_fn_app(&func, &args, state)?),
         _ => Err(CodeGenerateError::from("Unhandled expression kind.")),
     };
     Ok(instructions?)
@@ -607,14 +642,14 @@ pub fn gen_instr(
 /// Construct a WebAssembly module.
 ///
 /// We assume that the `Instructions` argument passed in does not contain
-/// a closing `Instruction::End` instruction. (can be changed if needed)
+/// a closing `Instruction::End` instruction.
 pub fn construct_module(
     name: &str,
     state: CodeGenerateState,
     param_types: Vec<Type>,
     ret_type: Type,
     mut instructions: Instructions,
-) -> Module {
+) -> builder::ModuleBuilder {
     // Construct the list of WebAssembly parameter types
     let wasm_param_types = param_types
         .iter()
@@ -660,5 +695,151 @@ pub fn construct_module(
         .internal()
         .func(0)
         .build()
+}
+
+pub fn construct_module_from_prog(prog: &Prog<TypedExpr>) -> Result<Module, CodeGenerateError> {
+    let mut module_builder = builder::module()
+        .memory()
+        .with_min(32)
+        .with_max(None)
+        .build();
+    let mut state = CodeGenerateState::new();
+
+    // First, the lambda-lifted functions within `prog` will get compiled.
+    // This is necessary for populating state.funcs, which maps the names of
+    // functions to indices within the WebAssembly store. For reference, see:
+    // https://webassembly.github.io/spec/core/exec/instructions.html#function-calls
+    // https://webassembly.github.io/spec/core/exec/runtime.html#syntax-store
+    prog.fns
+        .iter()
+        .for_each(|(name, lambda)| match &*lambda.kind {
+            ExprKind::Lambda(params, ret_type, body) => {
+                let param_types = params
+                    .iter()
+                    .map(|(_name, typ)| typ.clone())
+                    .collect::<Vec<Type>>();
+                // Add the lambda's n parameters as the first n local variables
+                params.iter().for_each(|(name, typ)| {
+                    let local_index = state.locals.len() as u32;
+                    state
+                        .locals
+                        .insert(name.clone(), (local_index, typ.clone().into()));
+                });
+
+                let func_instructions = gen_instr(&body, &mut state).unwrap();
+                let wasm_function = construct_function(
+                    param_types,
+                    ret_type.clone(),
+                    Instructions::new(func_instructions),
+                    &mut state,
+                );
+
+                // Update the `FuncsMap` table within `CodeGenerateState` so
+                // that any time this function gets referred to by name later,
+                // we know which index within WebAssembly's store we need to
+                // use to call the function.
+
+                // ex. the program has several functions. One of them is named
+                // "foo", and is the third to get compiled so then
+                // (key: "foo", value: 2) gets inserted to the table. Then
+                // when compiling the body, when it (foo 5) is seen, the
+                // code generate can look at state.funcs to see that foo
+                // maps to 2, so we just need to put 5 on the stack and add
+                // Instruction::Call(2) to perform the function application.
+                let func_index = state.funcs.len() as u32;
+                state.funcs.insert(name.to_string(), func_index);
+
+                // Add the function to the module
+                module_builder.push_function(wasm_function);
+
+                // Reset state.locals so that the locals don't carry on
+                // when compiling the next function...
+                // Having to remember this kind of thing is a bit of a flaw
+                // in the mutating-state-passing pattern we are using.
+                state.locals.clear();
+            }
+            _ => panic!("Function inside prog.fns is not a lambda."),
+        });
+
+    // Finally, the body of the program is compiled. We will just give it a
+    // fancy name like $$MAIN$$ and hope that nobody else uses it. :-)
+    let mut main_instructions = gen_instr(&prog.exp, &mut state).unwrap();
+    main_instructions.push(Instruction::End);
+    let return_type = prog.exp.typ.clone();
+    let wasm_locals = construct_locals(state.locals);
+    let func_index = state.funcs.len() as u32;
+    Ok(module_builder
+        .function()
+        .signature()
+        .with_params(vec![])
+        .with_return_type(Some(return_type.into()))
         .build()
+        .body()
+        .with_locals(wasm_locals)
+        .with_instructions(Instructions::new(main_instructions))
+        .build()
+        .build()
+        .export()
+        .field("$$MAIN$$")
+        .internal()
+        .func(func_index)
+        .build()
+        .build())
+}
+
+/// Construct a WebAssembly `FunctionDefinition`, a format for a function which
+/// can be inserted easily into a WebAssembly `Module`.
+///
+/// We assume that the `Instructions` argument passed in does not contain
+/// a closing `Instruction::End` instruction.
+fn construct_function(
+    param_types: Vec<Type>,
+    ret_type: Type,
+    mut instructions: Instructions,
+    state: &mut CodeGenerateState,
+) -> builder::FunctionDefinition {
+    // Construct the list of WebAssembly parameter types
+    let wasm_param_types = param_types
+        .iter()
+        .map(|typ| typ.clone().into())
+        .collect::<Vec<ValueType>>();
+
+    let wasm_locals = construct_locals(state.locals.clone());
+
+    // Add the required end instruction
+    instructions.elements_mut().push(Instruction::End);
+
+    // Construction the `FunctionDefinition`
+    builder::function()
+        .signature()
+        .with_params(wasm_param_types)
+        .with_return_type(Some(ret_type.into()))
+        .build()
+        .body()
+        .with_locals(wasm_locals)
+        .with_instructions(instructions)
+        .build()
+        .build()
+}
+
+/// The `state` argument passed around by the code generation functions will
+/// track any local variables that were needed during compilation (e.g. let
+/// expressions will generate local variables). These need to be converted
+/// into a format accepted by the `parity_wasm` library's `FunctionBuilder`
+/// API.
+fn construct_locals(locals: LocalsMap) -> Vec<Local> {
+    let mut locals_vec = locals
+        .iter()
+        .map(|(_name, index_type_pair)| *index_type_pair) // iterate over (key, value) in BTreeMap
+        .collect::<Vec<(u32, ValueType)>>();
+
+    // Sort the entires by index (since the the iterator produced by BTreeMap
+    // does not have a guaranteed ordering)
+    locals_vec.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+    // Finally, drop the indices, and construct locals using the type information
+    locals_vec
+        .iter()
+        .map(|(_index, typ)| Local::new(1, *typ))
+        .collect::<Vec<Local>>()
 }
