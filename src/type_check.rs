@@ -24,7 +24,10 @@ impl std::fmt::Display for TypeCheckError {
 // Helper functions
 //
 
-pub fn check_lambda_type_with_inputs(
+/// Given a function type and a list of parameter types, check that provided
+/// list of parameter types matches the types for the function, and return the
+/// function's return type.
+pub fn validate_lambda_type(
     fn_type: &Type,
     param_types: &Vector<Type>,
 ) -> Result<Type, TypeCheckError> {
@@ -282,7 +285,7 @@ fn tc_tuple_get_with_env(
                 Ok(TypedExpr::new(elem_type, ExprKind::TupleGet(tup, key)))
             } else {
                 Err(TypeCheckError::from(
-                    "Value in tuple-ref is too large for the provided tuple.",
+                    "Key in tuple-ref is too large for the provided tuple.",
                 ))
             }
         }
@@ -317,8 +320,8 @@ fn tc_record_get_with_env(
 ) -> Result<TypedExpr, TypeCheckError> {
     let typed_record = tc_with_env(record, env)?;
     match typed_record.typ.clone() {
-        Type::Record(bindings) => {
-            let matches: Vector<(String, Type)> = bindings
+        Type::Record(fields) => {
+            let matches: Vector<(String, Type)> = fields
                 .iter()
                 .cloned()
                 .filter(|pair| pair.0 == *key)
@@ -353,7 +356,7 @@ fn tc_apply_with_env(
         .collect::<Vector<Type>>();
 
     // TODO: is this variable (and the function call) appropriately named?
-    let lambda_type = check_lambda_type_with_inputs(&func.typ, &param_types)?;
+    let lambda_type = validate_lambda_type(&func.typ, &param_types)?;
     Ok(TypedExpr::new(lambda_type, ExprKind::FnApp(func, params)))
 }
 

@@ -12,7 +12,7 @@ fn test_record_elim_simple() {
     let rc_exp = record_elim_exp(&typed_exp).unwrap();
 
     println!("Source: {}", exp);
-    println!("Record converted: {}", rc_exp);
+    println!("Record elimination: {}", rc_exp);
     assert_eq!(rc_exp, expected_exp);
 }
 
@@ -26,7 +26,7 @@ fn test_record_elim_order_invariant() {
     let rc_exp = record_elim_exp(&typed_exp).unwrap();
 
     println!("Source: {}", exp);
-    println!("Record converted: {}", rc_exp);
+    println!("Record elimination: {}", rc_exp);
     assert_eq!(rc_exp, expected_exp);
 }
 
@@ -44,7 +44,7 @@ fn test_record_elim_record_get() {
     let rc_exp = record_elim_exp(&typed_exp).unwrap();
 
     println!("Source: {}", exp);
-    println!("Record converted: {}", rc_exp);
+    println!("Record elimination: {}", rc_exp);
     assert_eq!(rc_exp, expected_exp);
 }
 
@@ -86,6 +86,6 @@ fn test_record_elim_complex() {
     let rc_exp = record_elim_exp(&typed_exp).unwrap();
 
     println!("Source: {}", exp);
-    println!("Record converted: {}", rc_exp);
+    println!("Record elimination: {}", rc_exp);
     assert_eq!(rc_exp, expected_exp);
 }
