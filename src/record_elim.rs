@@ -9,24 +9,24 @@ use crate::types::Type;
 use im_rc::Vector;
 
 #[derive(Clone, Debug)]
-pub struct RecordConvertError(String);
+pub struct RecordElimError(String);
 
 // Allows other errors to wrap this one
-impl std::error::Error for RecordConvertError {}
+impl std::error::Error for RecordElimError {}
 
-impl From<&str> for RecordConvertError {
+impl From<&str> for RecordElimError {
     fn from(message: &str) -> Self {
-        RecordConvertError(String::from(message))
+        RecordElimError(String::from(message))
     }
 }
 
-impl std::fmt::Display for RecordConvertError {
+impl std::fmt::Display for RecordElimError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "RecordConvertError: {}", self.0)
+        write!(f, "RecordElimError: {}", self.0)
     }
 }
 
-fn rc_type(typ: &Type) -> Result<Type, RecordConvertError> {
+fn rc_type(typ: &Type) -> Result<Type, RecordElimError> {
     match typ {
         Type::Int => Ok(Type::Int),
         Type::Bool => Ok(Type::Bool),
@@ -48,7 +48,7 @@ fn rc_type(typ: &Type) -> Result<Type, RecordConvertError> {
             let mut rc_bindings = bindings
                 .iter()
                 .map(|pair| Ok((pair.0.clone(), rc_type(&pair.1)?)))
-                .collect::<Result<Vec<(String, Type)>, RecordConvertError>>()?;
+                .collect::<Result<Vec<(String, Type)>, RecordElimError>>()?;
             rc_bindings.sort_unstable_by(|a, b| a.0.cmp(&b.0));
             let type_vec: Vec<Type> = rc_bindings
                 .iter()
@@ -65,7 +65,7 @@ fn rc_type(typ: &Type) -> Result<Type, RecordConvertError> {
     }
 }
 
-fn rc_type_array(types: &Vector<Type>) -> Result<Vector<Type>, RecordConvertError> {
+fn rc_type_array(types: &Vector<Type>) -> Result<Vector<Type>, RecordElimError> {
     types.iter().map(|typ| Ok(rc_type(typ)?)).collect()
 }
 
@@ -77,20 +77,20 @@ fn rc_type_array(types: &Vector<Type>) -> Result<Vector<Type>, RecordConvertErro
 /// Expression must be type checked (annotated with types) before being passed
 /// in. After conversion, the output expression of this function will have all
 /// type annotations removed, so it should be re-type-checked.
-pub fn record_convert_exp(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
+pub fn record_elim_exp(exp: &TypedExpr) -> Result<TypedExpr, RecordElimError> {
     rc(exp)
 }
 
 /// Converts a program into one without record or record-ref expressions.
 ///
-/// See `record_convert_exp` for more specific details.
-pub fn record_convert_prog(prog: &Prog<TypedExpr>) -> Result<Prog<TypedExpr>, RecordConvertError> {
+/// See `record_elim_exp` for more specific details.
+pub fn record_elim_prog(prog: &Prog<TypedExpr>) -> Result<Prog<TypedExpr>, RecordElimError> {
     let rexp = rc(&prog.exp)?;
     let rfns = prog
         .fns
         .iter()
         .map(|(name, func)| Ok((name.clone(), rc(&func)?)))
-        .collect::<Result<Vector<(String, TypedExpr)>, RecordConvertError>>()?;
+        .collect::<Result<Vector<(String, TypedExpr)>, RecordElimError>>()?;
     Ok(Prog {
         exp: rexp,
         fns: rfns,
@@ -99,14 +99,14 @@ pub fn record_convert_prog(prog: &Prog<TypedExpr>) -> Result<Prog<TypedExpr>, Re
 
 fn rc_bindings(
     bindings: &Vector<(String, TypedExpr)>,
-) -> Result<Vector<(String, TypedExpr)>, RecordConvertError> {
+) -> Result<Vector<(String, TypedExpr)>, RecordElimError> {
     bindings
         .iter()
         .map(|pair| rc(&pair.1).and_then(|cexp| Ok((pair.0.clone(), cexp))))
         .collect()
 }
 
-fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
+fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordElimError> {
     match &*exp.kind {
         ExprKind::Num(x) => Ok(TypedExpr::new(Type::Int, ExprKind::Num(*x))),
         ExprKind::Bool(x) => Ok(TypedExpr::new(Type::Bool, ExprKind::Bool(*x))),
@@ -147,7 +147,7 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
                         Err(e) => Err(e),
                     }
                 })
-                .collect::<Result<Vector<(String, Type)>, RecordConvertError>>()?;
+                .collect::<Result<Vector<(String, Type)>, RecordElimError>>()?;
             let rbody = rc(&body)?;
             let rret_type = rc_type(&ret_type)?;
             let param_types: Vector<Type> = rparams.iter().map(|pair| pair.1.clone()).collect();
@@ -161,7 +161,7 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
             let rexps = exps
                 .iter()
                 .map(|subexp| rc(&subexp))
-                .collect::<Result<Vector<TypedExpr>, RecordConvertError>>()?;
+                .collect::<Result<Vector<TypedExpr>, RecordElimError>>()?;
             let mut inner_types = rexps
                 .iter()
                 .map(|rexp| rexp.typ.clone())
@@ -190,7 +190,7 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
             let rval = rc(&val)?;
             match rval.typ.clone() {
                 Type::List(boxed_type) => Ok(TypedExpr::new(*boxed_type, ExprKind::Car(rval))),
-                _ => Err(RecordConvertError::from(
+                _ => Err(RecordElimError::from(
                     "Expression in car is not a list type.",
                 )),
             }
@@ -211,7 +211,7 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
             let rexps = exps
                 .iter()
                 .map(|subexp| rc(&subexp))
-                .collect::<Result<Vector<TypedExpr>, RecordConvertError>>()?;
+                .collect::<Result<Vector<TypedExpr>, RecordElimError>>()?;
             let inner_types = rexps
                 .iter()
                 .map(|typed_exp| typed_exp.typ.clone())
@@ -229,12 +229,12 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
                         let elem_type = vec[*key as usize].clone();
                         Ok(TypedExpr::new(elem_type, ExprKind::TupleGet(rtuple, *key)))
                     } else {
-                        Err(RecordConvertError::from(
+                        Err(RecordElimError::from(
                             "Value in tuple-ref is too large for the provided tuple.",
                         ))
                     }
                 }
-                _ => Err(RecordConvertError::from(
+                _ => Err(RecordElimError::from(
                     "First expression in tuple-ref is not a tuple.",
                 )),
             }
@@ -268,12 +268,12 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
                             ExprKind::TupleGet(tuple, tuple_index),
                         ))
                     } else {
-                        Err(RecordConvertError::from(
+                        Err(RecordElimError::from(
                             "Value in tuple-ref is too large for the provided tuple.",
                         ))
                     }
                 }
-                _ => Err(RecordConvertError::from(
+                _ => Err(RecordElimError::from(
                     "First expression in record-ref (after conversion) is not a tuple.",
                 )),
             }
@@ -300,7 +300,7 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
             let rargs = args
                 .iter()
                 .map(|arg| rc(&arg))
-                .collect::<Result<Vector<TypedExpr>, RecordConvertError>>()?;
+                .collect::<Result<Vector<TypedExpr>, RecordElimError>>()?;
             let rargs_types = rargs
                 .iter()
                 .map(|rarg| rarg.typ.clone())
@@ -308,7 +308,7 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
             let apply_type = match check_lambda_type_with_inputs(&rfunc.typ, &rargs_types) {
                 Ok(val) => val,
                 Err(e) => {
-                    return Err(RecordConvertError(format!(
+                    return Err(RecordElimError(format!(
                         "Error in check_lambda_type_with_inputs: {}",
                         e
                     )))
@@ -319,10 +319,10 @@ fn rc(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
     }
 }
 
-fn get_field_index(record: &TypedExpr, field: &str) -> Result<u32, RecordConvertError> {
+fn get_field_index(record: &TypedExpr, field: &str) -> Result<u32, RecordElimError> {
     let mut fields_vec: Vec<(String, Type)> = match &record.typ {
         Type::Record(fields) => Ok(fields.iter().cloned().collect()),
-        _ => Err(RecordConvertError::from(
+        _ => Err(RecordElimError::from(
             "Type annotation for record has incorrect type.",
         )),
     }?;
@@ -331,5 +331,5 @@ fn get_field_index(record: &TypedExpr, field: &str) -> Result<u32, RecordConvert
         .iter()
         .position(|pair| pair.0 == field)
         .map(|val| val as u32)
-        .ok_or_else(|| RecordConvertError::from("Field not found in record."))
+        .ok_or_else(|| RecordElimError::from("Field not found in record."))
 }
