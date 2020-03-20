@@ -3,7 +3,7 @@
 // does transformations on the cases I am interested in, and does some form
 // of default recursion in other cases
 
-use crate::common::{ExprKind, TypedExpr};
+use crate::common::{ExprKind, Prog, TypedExpr};
 use crate::type_check::check_lambda_type_with_inputs;
 use crate::types::Type;
 use im_rc::Vector;
@@ -69,7 +69,7 @@ fn rc_type_array(types: &Vector<Type>) -> Result<Vector<Type>, RecordConvertErro
     types.iter().map(|typ| Ok(rc_type(typ)?)).collect()
 }
 
-/// Convert an expression into one with no record or record-ref expressions.
+/// Convert an expression into one without record or record-ref expressions.
 ///
 /// Conversion is performed by replacing records with corresponding tuples,
 /// and replacing record-ref with tuple-ref expressions.
@@ -77,12 +77,24 @@ fn rc_type_array(types: &Vector<Type>) -> Result<Vector<Type>, RecordConvertErro
 /// Expression must be type checked (annotated with types) before being passed
 /// in. After conversion, the output expression of this function will have all
 /// type annotations removed, so it should be re-type-checked.
-///
-/// TODO: Modify record conversion for efficiency purposes to not strip all
-/// type information (just replace type annotations where needed). If calling
-/// the type checker is needed, perhaps it can just be done selectively.
-pub fn record_convert(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
+pub fn record_convert_exp(exp: &TypedExpr) -> Result<TypedExpr, RecordConvertError> {
     rc(exp)
+}
+
+/// Converts a program into one without record or record-ref expressions.
+///
+/// See `record_convert_exp` for more specific details.
+pub fn record_convert_prog(prog: &Prog<TypedExpr>) -> Result<Prog<TypedExpr>, RecordConvertError> {
+    let rexp = rc(&prog.exp)?;
+    let rfns = prog
+        .fns
+        .iter()
+        .map(|(name, func)| Ok((name.clone(), rc(&func)?)))
+        .collect::<Result<Vector<(String, TypedExpr)>, RecordConvertError>>()?;
+    Ok(Prog {
+        exp: rexp,
+        fns: rfns,
+    })
 }
 
 fn rc_bindings(

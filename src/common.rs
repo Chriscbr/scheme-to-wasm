@@ -292,6 +292,10 @@ impl<T: Clone> From<Vector<(String, T)>> for TypeEnv<T> {
     }
 }
 
+// TODO: implment a generic trait (e.g. "CompilerPass"?) which just requires
+// implementing a TypedExpr -> TypedExpr function; then automatically allow any
+// pass to be applied to Prog<TypedExpr> through a generic implementation
+
 #[derive(Clone)]
 pub struct Prog<E> {
     pub fns: Vector<(String, E)>,

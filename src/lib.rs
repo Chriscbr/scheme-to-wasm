@@ -1,5 +1,6 @@
 pub mod closure_convert;
 pub mod common;
+pub mod compile;
 pub mod generate_code;
 pub mod lambda_lift;
 pub mod parse;
