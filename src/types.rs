@@ -1,3 +1,4 @@
+use crate::common::{transform_typed_exp_recursive, TypedExpr};
 use crate::util::format_vector;
 use im_rc::Vector;
 
@@ -56,6 +57,28 @@ impl std::fmt::Display for TypeSubstituteError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "TypeSubstituteError: {}", self.0)
     }
+}
+
+/// Performs a type variable solution over an entire TypedExpr (an abstract
+/// syntax tree annotated with types).
+///
+/// This function will never "fail" due to the actual type variable
+/// transformation, but any general AST transform can fail in a small number of
+/// cases due to the nature of the `common::transform_typed_exp_recursive()`
+/// function. Thus, this function must still have a dummy Error type (which
+/// implements From<'a str>) associated with it.
+pub fn type_var_substitute_recursive(
+    exp: &TypedExpr,
+    type_sub: u64,
+    replace_with: &Type,
+) -> Result<TypedExpr, TypeSubstituteError> {
+    fn transform_dumb(_exp: &TypedExpr) -> Option<Result<TypedExpr, TypeSubstituteError>> {
+        None
+    }
+    let transform_type = |typ: &Type| -> Option<Result<Type, TypeSubstituteError>> {
+        Some(Ok(type_var_substitute(typ, type_sub, replace_with)))
+    };
+    transform_typed_exp_recursive(exp, transform_dumb, transform_type)
 }
 
 pub fn type_var_substitute(typ: &Type, type_var: u64, replace_with: &Type) -> Type {

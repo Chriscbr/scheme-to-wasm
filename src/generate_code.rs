@@ -597,7 +597,7 @@ pub fn gen_instr(
     exp: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
-    let instructions: Result<Vec<Instruction>, CodeGenerateError> = match dbg!(&*exp.kind) {
+    let instructions: Result<Vec<Instruction>, CodeGenerateError> = match &*exp.kind {
         ExprKind::Num(x) => Ok(vec![Instruction::I32Const(*x)]),
         ExprKind::Bool(x) => Ok(vec![Instruction::I32Const(*x as i32)]),
         ExprKind::Str(_) => panic!("Unhandled gen_instr case: Str"),

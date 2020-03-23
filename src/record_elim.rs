@@ -4,7 +4,8 @@
 // of default recursion in other cases
 
 use crate::common::{
-    transform_type_recursive, transform_typed_exp_recursive, ExprKind, Prog, TypedExpr,
+    transform_type_recursive, transform_typed_exp_recursive, transform_typed_prog_recursive,
+    ExprKind, Prog, TypedExpr,
 };
 use crate::types::Type;
 use im_rc::Vector;
@@ -25,6 +26,29 @@ impl std::fmt::Display for RecordElimError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "RecordElimError: {}", self.0)
     }
+}
+
+/// Convert an expression into one without record or record-ref expressions.
+///
+/// Conversion is performed by replacing records with corresponding tuples,
+/// and replacing record-ref with tuple-ref expressions.
+///
+/// Expression must be type checked (annotated with types) before being passed
+/// in. After conversion, the output expression of this function will have all
+/// type annotations removed, so it should be re-type-checked.
+pub fn record_elim_exp(exp: &TypedExpr) -> Result<TypedExpr, RecordElimError> {
+    transform_typed_exp_recursive(exp, re_helper, re_type_helper)
+}
+
+/// Converts a program into one without record or record-ref expressions.
+///
+/// See `record_elim_exp` for more specific details.
+pub fn record_elim_prog(prog: &Prog<TypedExpr>) -> Result<Prog<TypedExpr>, RecordElimError> {
+    transform_typed_prog_recursive(prog, re_helper, re_type_helper)
+}
+
+fn re_type(typ: &Type) -> Result<Type, RecordElimError> {
+    transform_type_recursive(typ, re_type_helper)
 }
 
 fn re_type_helper(typ: &Type) -> Option<Result<Type, RecordElimError>> {
@@ -54,45 +78,13 @@ fn re_type_helper(typ: &Type) -> Option<Result<Type, RecordElimError>> {
     }
 }
 
-fn re_type(typ: &Type) -> Result<Type, RecordElimError> {
-    transform_type_recursive(typ, re_type_helper)
-}
-
-/// Convert an expression into one without record or record-ref expressions.
-///
-/// Conversion is performed by replacing records with corresponding tuples,
-/// and replacing record-ref with tuple-ref expressions.
-///
-/// Expression must be type checked (annotated with types) before being passed
-/// in. After conversion, the output expression of this function will have all
-/// type annotations removed, so it should be re-type-checked.
-pub fn record_elim_exp(exp: &TypedExpr) -> Result<TypedExpr, RecordElimError> {
-    re(exp)
-}
-
-/// Converts a program into one without record or record-ref expressions.
-///
-/// See `record_elim_exp` for more specific details.
-pub fn record_elim_prog(prog: &Prog<TypedExpr>) -> Result<Prog<TypedExpr>, RecordElimError> {
-    let rexp = re(&prog.exp)?;
-    let rfns = prog
-        .fns
-        .iter()
-        .map(|(name, func)| Ok((name.clone(), re(&func)?)))
-        .collect::<Result<Vector<(String, TypedExpr)>, RecordElimError>>()?;
-    Ok(Prog {
-        exp: rexp,
-        fns: rfns,
-    })
-}
-
 fn re_helper(exp: &TypedExpr) -> Option<Result<TypedExpr, RecordElimError>> {
     match &*exp.kind {
         ExprKind::Record(bindings) => {
             let rbindings = bindings
                 .iter()
                 .map(|(name, subexp)| {
-                    let tsubexp = re(subexp)?;
+                    let tsubexp = record_elim_exp(subexp)?;
                     Ok((name.clone(), tsubexp))
                 })
                 .collect::<Result<Vector<(String, TypedExpr)>, RecordElimError>>();
@@ -116,7 +108,7 @@ fn re_helper(exp: &TypedExpr) -> Option<Result<TypedExpr, RecordElimError>> {
             )))
         }
         ExprKind::RecordGet(record, key) => {
-            let tuple = match re(&record) {
+            let tuple = match record_elim_exp(&record) {
                 Ok(val) => val,
                 Err(e) => return Some(Err(e)),
             };
@@ -145,10 +137,6 @@ fn re_helper(exp: &TypedExpr) -> Option<Result<TypedExpr, RecordElimError>> {
         }
         _ => None,
     }
-}
-
-fn re(exp: &TypedExpr) -> Result<TypedExpr, RecordElimError> {
-    transform_typed_exp_recursive(exp, re_helper, re_type_helper)
 }
 
 fn get_field_index(record: &TypedExpr, field: &str) -> Result<u32, RecordElimError> {

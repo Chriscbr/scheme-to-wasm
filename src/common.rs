@@ -52,15 +52,19 @@ pub fn dangerously_reset_gensym_count() {
     GENSYM_COUNT.store(0, Ordering::SeqCst);
 }
 
-/// A blanket trait that defines all of the traits that all expression types
-/// must share / implement.
+// struct BaseExpr {
+//     kind: Box<ExprKind<
+// }
+
+/// A base trait (somewhat like a Java "base class" or "superclass")
+/// which defines the behaviors that all expression types must share.
 ///
-/// Currently, the two expression types are Expr and TypedExpr. Once an
-/// expression type implements all of these traits, it will be usable within
-/// all other types that are generic over expression types, such as
-/// ExprKind and Prog.
-pub trait ExprMeta: Clone + Debug + Display + PartialEq {}
-impl<T: Clone + Debug + Display + PartialEq> ExprMeta for T {}
+/// Currently, the two expression types that implement this trait are Expr
+/// and TypedExpr.
+pub trait ExprMeta: Clone + Debug + Display + PartialEq {
+    type ExprType: Clone + Debug + Display + PartialEq;
+    fn kind(&self) -> &ExprKind<Self>;
+}
 
 /// A representation of an expression (essentially an AST node) without any
 /// associated type information.
@@ -77,12 +81,26 @@ impl Expr {
     }
 }
 
+impl ExprMeta for Expr {
+    type ExprType = Expr; // The fact that this works amazes me
+    fn kind(&self) -> &ExprKind<Expr> {
+        &*self.kind
+    }
+}
+
 /// A representation of an expression (essentially an AST node) with
 /// associated type information.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypedExpr {
     pub typ: Type,
     pub kind: Box<ExprKind<TypedExpr>>,
+}
+
+impl ExprMeta for TypedExpr {
+    type ExprType = TypedExpr;
+    fn kind(&self) -> &ExprKind<TypedExpr> {
+        &*self.kind
+    }
 }
 
 impl TypedExpr {
@@ -94,10 +112,19 @@ impl TypedExpr {
     }
 }
 
-pub fn transform_type_recursive<G, E>(typ: &Type, transform_type: G) -> Result<Type, E>
+/// Performs a transformation on a type annotation, provided a function for
+/// transforming individual types for a handful of cases.
+///
+/// For example, the passed-in function `transform_type` could perform a
+/// transformation on just Type::String cases, switching it to some other type,
+/// by returning Some(Type), and then punt on the rest of the cases by
+/// returning None. This way all of the manual logic for how to recurse into
+/// the children of different type annotations does not have to repeated for
+/// different type transformations.
+pub fn transform_type_recursive<E, G>(typ: &Type, transform_type: G) -> Result<Type, E>
 where
-    G: Fn(&Type) -> Option<Result<Type, E>> + Copy,
     E: std::error::Error,
+    G: Fn(&Type) -> Option<Result<Type, E>> + Copy,
 {
     if let Some(ttype) = transform_type(&typ) {
         return ttype;
@@ -140,10 +167,10 @@ where
     }
 }
 
-fn transform_type_array<G, E>(types: &Vector<Type>, transform_type: G) -> Result<Vector<Type>, E>
+fn transform_type_array<E, G>(types: &Vector<Type>, transform_type: G) -> Result<Vector<Type>, E>
 where
-    G: Fn(&Type) -> Option<Result<Type, E>> + Copy,
     E: std::error::Error,
+    G: Fn(&Type) -> Option<Result<Type, E>> + Copy,
 {
     types
         .iter()
@@ -165,15 +192,24 @@ where
 /// everywhere in the tree, but the individualized logic for recursing into
 /// children of different kinds of ExprKind nodes does not have to be
 /// duplicated for every compiler pass.
-pub fn transform_typed_exp_recursive<'a, F, G, E>(
+///
+/// Technical note:
+/// The error type parameter E must also implement From<&'a str> currently
+/// in order to ensure we can construct errors that are that not specific
+/// to the particular transformation, e.g. in the case that we can't
+/// type check an expression like (tuple-ref (make-tuple 3 4 5) 10) since 10
+/// is out of the range of 0..2. It's possible we could substitute this
+/// with a custom trait that all compiler passes must implement, but for now
+/// this solution is the most simple and reasonable.
+pub fn transform_typed_exp_recursive<'a, E, F, G>(
     exp: &TypedExpr,
     transform_exp: F,
     transform_type: G,
 ) -> Result<TypedExpr, E>
 where
+    E: std::error::Error + From<&'a str>,
     F: Fn(&TypedExpr) -> Option<Result<TypedExpr, E>> + Copy,
     G: Fn(&Type) -> Option<Result<Type, E>> + Copy,
-    E: std::error::Error + From<&'a str>,
 {
     // If the user's custom `transform_exp` function has a special way to
     // transform the provided node, then let's return that value.
@@ -330,14 +366,12 @@ where
                     Ok((name.clone(), tsubexp))
                 })
                 .collect::<Result<Vector<(String, TypedExpr)>, E>>()?;
-            let exp_vec: Vec<TypedExpr> =
-                tbindings.iter().map(|(_field, exp)| exp.clone()).collect();
-            let inner_types = exp_vec
+            let types_vec: Vector<(String, Type)> = tbindings
                 .iter()
-                .map(|typed_exp| typed_exp.typ.clone())
-                .collect::<Vector<Type>>();
+                .map(|(field, exp)| (field.clone(), exp.typ.clone()))
+                .collect();
             Ok(TypedExpr::new(
-                Type::Tuple(inner_types),
+                Type::Record(types_vec),
                 ExprKind::Record(tbindings),
             ))
         }
@@ -401,6 +435,36 @@ where
     }
 }
 
+/// Converts a program into one without record or record-ref expressions.
+///
+/// See `record_elim_exp` for more specific details.
+pub fn transform_typed_prog_recursive<'a, E, F, G>(
+    prog: &Prog<TypedExpr>,
+    transform_exp: F,
+    transform_type: G,
+) -> Result<Prog<TypedExpr>, E>
+where
+    E: std::error::Error + From<&'a str>,
+    F: Fn(&TypedExpr) -> Option<Result<TypedExpr, E>> + Copy,
+    G: Fn(&Type) -> Option<Result<Type, E>> + Copy,
+{
+    let texp = transform_typed_exp_recursive(&prog.exp, transform_exp, transform_type)?;
+    let tfns = prog
+        .fns
+        .iter()
+        .map(|(name, func)| {
+            Ok((
+                name.clone(),
+                transform_typed_exp_recursive(&func, transform_exp, transform_type)?,
+            ))
+        })
+        .collect::<Result<Vector<(String, TypedExpr)>, E>>()?;
+    Ok(Prog {
+        exp: texp,
+        fns: tfns,
+    })
+}
+
 /// A representation of a kind of expression in our language.
 ///
 /// This enum is parameterized over E, a parent expression type such as
@@ -460,7 +524,9 @@ impl Display for TypedExpr {
     }
 }
 
-impl<E: Clone + Display + Debug + PartialEq> Display for ExprKind<E> {
+// TODO: Implement some kind of pretty-printing for expressions longer than
+// some number of characters, or some number of children / subtree size...
+impl<E: ExprMeta> Display for ExprKind<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExprKind::Binop(op, exp1, exp2) => write!(f, "({} {} {})", op, exp1, exp2),

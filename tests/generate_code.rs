@@ -1,4 +1,5 @@
 use scheme_to_wasm::common::{Expr, ExprKind, Prog, TypedExpr};
+// use scheme_to_wasm::compile::compile_exp;
 use scheme_to_wasm::generate_code::{
     construct_module, construct_module_from_prog, gen_instr, CodeGenerateState,
 };
@@ -16,7 +17,7 @@ fn test_runner_exp(exp: Expr, test_name: &str) -> Value {
     let typed_exp = type_check(&exp).unwrap();
     let exp_type = typed_exp.typ.clone();
     let mut state = CodeGenerateState::default();
-    let instructions = dbg!(gen_instr(&typed_exp, &mut state).unwrap());
+    let instructions = gen_instr(&typed_exp, &mut state).unwrap();
     let module = construct_module(
         "$$MAIN$$",
         state,
@@ -187,9 +188,17 @@ fn test_compile_func_without_closure_conversion() {
         fns: vector![(String::from("func0"), typed_func)],
         exp: typed_exp,
     };
-    let output = test_runner_prog(prog, "func1.wasm");
+    let output = test_runner_prog(prog, "func_handwritten1.wasm");
     assert_eq!(output, Value::I32(6));
 }
+
+// #[test]
+// fn test_compile_func() {
+//     let exp = parse(&lexpr::from_str("((lambda ((x : int)) : int (+ x 1)) 5)").unwrap()).unwrap();
+//     let prog = compile_exp(&exp).unwrap();
+//     let output = test_runner_prog(prog, "func1.wasm");
+//     assert_eq!(output, Value::I32(6));
+// }
 
 #[test]
 fn test_handwritten_lambda() {
