@@ -1,5 +1,5 @@
 use scheme_to_wasm::common::{Expr, ExprKind, Prog, TypedExpr};
-// use scheme_to_wasm::compile::compile_exp;
+use scheme_to_wasm::compile::compile_exp;
 use scheme_to_wasm::generate_code::{
     construct_module, construct_module_from_prog, gen_instr, CodeGenerateState,
 };
@@ -115,8 +115,22 @@ fn test_compile_nested_tuple() {
         .unwrap(),
     )
     .unwrap();
-    let output = test_runner_exp(exp, "nested_tuple1.wasm");
+    let output = test_runner_exp(exp, "nested_tuple.wasm");
     assert_eq!(output, Value::I32(6));
+}
+
+#[test]
+fn test_compile_empty_tuple() {
+    let exp = parse(
+        &lexpr::from_str(
+            "(let ((a (make-tuple)))
+                (begin (make-tuple) (+ 3 5)))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let output = test_runner_exp(exp, "empty_tuple.wasm");
+    assert_eq!(output, Value::I32(8));
 }
 
 #[test]
@@ -192,17 +206,34 @@ fn test_compile_func_without_closure_conversion() {
     assert_eq!(output, Value::I32(6));
 }
 
-// #[test]
-// fn test_compile_func() {
-//     let exp = parse(&lexpr::from_str("((lambda ((x : int)) : int (+ x 1)) 5)").unwrap()).unwrap();
-//     let prog = compile_exp(&exp).unwrap();
-//     let output = test_runner_prog(prog, "func1.wasm");
-//     assert_eq!(output, Value::I32(6));
-// }
+#[test]
+fn test_compile_func1() {
+    let exp = parse(&lexpr::from_str("((lambda ((x : int)) : int (+ x 1)) 5)").unwrap()).unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    println!("{}", prog);
+    let output = test_runner_prog(prog, "func1.wasm");
+    assert_eq!(output, Value::I32(6));
+}
+
+#[test]
+fn test_compile_func2() {
+    let exp =
+        parse(&lexpr::from_str("(let ((a 3)) ((lambda ((x : int)) : int (+ x a)) 5))").unwrap())
+            .unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    println!("{}", prog);
+    let output = test_runner_prog(prog, "func2.wasm");
+    assert_eq!(output, Value::I32(8));
+}
 
 #[test]
 fn test_handwritten_lambda() {
     let module = builder::module()
+        .table()
+        .with_min(32)
+        .with_max(None)
+        .with_element(0, vec![0])
+        .build()
         .memory()
         .with_min(32)
         .with_max(None)
@@ -235,7 +266,8 @@ fn test_handwritten_lambda() {
         .body()
         .with_instructions(Instructions::new(vec![
             Instruction::I32Const(5),
-            Instruction::Call(0),
+            Instruction::I32Const(0),
+            Instruction::CallIndirect(0, 0),
             Instruction::End,
         ]))
         .build()

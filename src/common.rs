@@ -552,17 +552,16 @@ impl<E: ExprMeta> Display for ExprKind<E> {
                 )
             }
             ExprKind::FnApp(func, args) => write!(f, "({} {})", func, format_vector(args.clone())),
-            ExprKind::Record(bindings) => {
-                if bindings.is_empty() {
-                    write!(f, "(make-record)")
-                } else {
+            ExprKind::Record(bindings) => match bindings.len() {
+                0 => write!(f, "(make-record)"),
+                _ => {
                     let bindings_str_vec = bindings
                         .iter()
                         .map(|pair| format!("({} {})", pair.0, pair.1))
                         .collect();
                     write!(f, "(make-record {})", format_vector(bindings_str_vec))
                 }
-            }
+            },
             ExprKind::RecordGet(record, key) => write!(f, "(record-ref {} {})", record, key),
             ExprKind::Begin(exps) => write!(f, "(begin {})", format_vector(exps.clone())),
             ExprKind::Set(var_name, exp) => write!(f, "(set! {} {})", var_name, exp),
@@ -571,7 +570,10 @@ impl<E: ExprMeta> Display for ExprKind<E> {
             ExprKind::Cdr(exp) => write!(f, "(cdr {})", exp),
             ExprKind::IsNull(exp) => write!(f, "(null? {})", exp),
             ExprKind::Null(typ) => write!(f, "(null {})", typ),
-            ExprKind::Tuple(exps) => write!(f, "(make-tuple {})", format_vector(exps.clone())),
+            ExprKind::Tuple(exps) => match exps.len() {
+                0 => write!(f, "(make-tuple)"),
+                _ => write!(f, "(make-tuple {})", format_vector(exps.clone())),
+            },
             ExprKind::TupleGet(tup, key) => write!(f, "(tuple-ref {} {})", tup, key),
             // TODO: change to (pack typ_sub val : exist)?
             ExprKind::Pack(val, sub, exist) => write!(f, "(pack {} {} {})", val, sub, exist),
@@ -670,8 +672,8 @@ impl<T: Clone> From<Vector<(String, T)>> for TypeEnv<T> {
 // implementing a TypedExpr -> TypedExpr function; then automatically allow any
 // pass to be applied to Prog<TypedExpr> through a generic implementation
 
-#[derive(Clone)]
-pub struct Prog<E> {
+#[derive(Clone, Debug)]
+pub struct Prog<E: ExprMeta> {
     pub fns: Vector<(String, E)>,
     pub exp: E,
 }

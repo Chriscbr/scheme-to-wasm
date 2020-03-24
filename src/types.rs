@@ -171,7 +171,10 @@ impl std::fmt::Display for Type {
                     write!(f, "(-> {} {})", format_vector(in_typs.clone()), ret_typ)
                 }
             }
-            Type::Tuple(typs) => write!(f, "(tuple {})", format_vector(typs.clone())),
+            Type::Tuple(typs) => match typs.len() {
+                0 => write!(f, "(tuple)"),
+                _ => write!(f, "(tuple {})", format_vector(typs.clone())),
+            },
             Type::Record(bindings) => {
                 if bindings.is_empty() {
                     write!(f, "(record)")

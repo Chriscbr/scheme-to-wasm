@@ -4,6 +4,7 @@
 use crate::common::{BinOp, ExprKind, Prog, TypedExpr};
 use crate::types::Type;
 
+use std::cmp;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -82,7 +83,7 @@ impl From<Type> for ValueType {
             Type::Bool => ValueType::I32,
             Type::Str => panic!("Unhandled type: str"),
             Type::List(_x) => ValueType::I32,
-            Type::Func(_typs, _ret_typ) => panic!("Unhandled type: func"),
+            Type::Func(_typs, _ret_typ) => ValueType::I32,
             Type::Tuple(_typs) => ValueType::I32,
             Type::Record(_fields) => panic!("Unhandled type: record"),
             Type::Exists(_bound_var, _inner_typ) => panic!("Unhandled type: existential type"),
@@ -101,8 +102,11 @@ fn wasm_size_of(typ: &Type) -> u32 {
         Type::Str => panic!("Unhandled type: str"),
         // TODO: check if this is correct; what if we have a list of tuple?
         Type::List(inner_typ) => 4 + wasm_size_of(inner_typ),
-        Type::Func(_typs, _ret_typ) => panic!("Unhandled type: func"),
-        Type::Tuple(types) => types.iter().map(|typ| wasm_size_of(typ)).sum(),
+        Type::Func(_typs, _ret_typ) => 4,
+        // Ensure that the size of a tuple is at least 4,
+        // to handle the case of empty tuples.
+        // TODO: check to make sure this is working as intended!
+        Type::Tuple(types) => cmp::max(4, types.iter().map(|typ| wasm_size_of(typ)).sum()),
         Type::Record(_fields) => panic!("Unhandled type: record"),
         Type::Exists(_bound_var, _inner_typ) => panic!("Unhandled type: existential type"),
         Type::TypeVar(_x) => panic!("Unhandled type: type var"),
@@ -569,28 +573,37 @@ fn gen_instr_fn_app(
     args: &Vector<TypedExpr>,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
-    match &*func.kind {
-        ExprKind::Id(name) => {
-            let func_idx: u32 = match state.funcs.get(name) {
-                Some(idx) => *idx,
-                None => {
-                    return Err(CodeGenerateError::from(
-                        "Function name not found in functions maps!",
-                    ))
-                }
-            };
-            let mut fn_app_instr: Vec<Instruction> = vec![];
-            for exp in args {
-                let mut exp_instr = gen_instr(exp, state)?;
-                fn_app_instr.append(&mut exp_instr);
-            }
-            fn_app_instr.push(Instruction::Call(func_idx));
-            Ok(fn_app_instr)
-        }
-        _ => Err(CodeGenerateError::from(
-            "Function application does not appear to be correctly lambda lifted!",
-        )),
+    let mut fn_app_instr: Vec<Instruction> = vec![];
+    for exp in args {
+        let mut exp_instr = gen_instr(exp, state)?;
+        fn_app_instr.append(&mut exp_instr);
     }
+    let mut func_idx_instr: Vec<Instruction> = gen_instr(func, state)?;
+    fn_app_instr.append(&mut func_idx_instr);
+    fn_app_instr.push(Instruction::CallIndirect(0, 0));
+    Ok(fn_app_instr)
+    // match &*func.kind {
+    //     ExprKind::Id(name) => {
+    //         let func_idx: u32 = match state.funcs.get(name) {
+    //             Some(idx) => *idx,
+    //             None => {
+    //                 return Err(CodeGenerateError::from(
+    //                     "Function name not found in functions maps!",
+    //                 ))
+    //             }
+    //         };
+    //         let mut fn_app_instr: Vec<Instruction> = vec![];
+    //         for exp in args {
+    //             let mut exp_instr = gen_instr(exp, state)?;
+    //             fn_app_instr.append(&mut exp_instr);
+    //         }
+    //         fn_app_instr.push(Instruction::Call(func_idx));
+    //         Ok(fn_app_instr)
+    //     }
+    //     _ => Err(CodeGenerateError::from(
+    //         "Function application does not appear to be correctly lambda lifted!",
+    //     )),
+    // }
 }
 
 pub fn gen_instr(
@@ -602,11 +615,18 @@ pub fn gen_instr(
         ExprKind::Bool(x) => Ok(vec![Instruction::I32Const(*x as i32)]),
         ExprKind::Str(_) => panic!("Unhandled gen_instr case: Str"),
         ExprKind::Id(sym) => {
-            let local_idx = state
-                .locals
-                .get(sym)
-                .ok_or_else(|| "Symbol not found in LocalsMap.")?;
-            Ok(vec![Instruction::GetLocal(local_idx.0)])
+            println!("{:?}", state.locals);
+            match state.locals.get(sym) {
+                Some(local_idx) => Ok(vec![Instruction::GetLocal(local_idx.0)]),
+                None => match state.funcs.get(sym) {
+                    Some(func_idx) => Ok(vec![Instruction::I32Const(*func_idx as i32)]),
+                    None => {
+                        return Err(CodeGenerateError::from(
+                            "Symbol not found in locals or function table.",
+                        ))
+                    }
+                },
+            }
         }
         ExprKind::Binop(op, arg1, arg2) => Ok(gen_instr_binop(*op, &arg1, &arg2, state)?),
         ExprKind::If(pred, cons, alt) => Ok(gen_instr_if(&pred, &cons, &alt, state)?),
@@ -760,6 +780,13 @@ pub fn construct_module_from_prog(prog: &Prog<TypedExpr>) -> Result<Module, Code
             }
             _ => panic!("Function inside prog.fns is not a lambda."),
         });
+
+    // Construct a dummy table to make Instruction::CallIndirect work.
+    let mut module_builder = module_builder.table().with_min(32).with_max(None);
+    for i in 0..prog.fns.len() {
+        module_builder = module_builder.with_element(i as u32, vec![i as u32]);
+    }
+    let module_builder = module_builder.build();
 
     // Finally, the body of the program is compiled. We will just give it a
     // fancy name like $$MAIN$$ and hope that nobody else uses it. :-)
