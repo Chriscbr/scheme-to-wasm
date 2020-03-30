@@ -1,6 +1,3 @@
-// TODO: consider simplifying code generation everywhere, under the assumption
-// that all data is 32-bit, just to minimize code complexity / maintenance
-
 use crate::common::{BinOp, ExprKind, Prog, TypedExpr};
 use crate::types::Type;
 
@@ -30,14 +27,14 @@ impl std::fmt::Display for CodeGenerateError {
     }
 }
 
-/// A key-value map for finding the local variable index and WebAssembly type
-/// associated with a local variable.
+/// A key-value map for finding the local variable index associated with
+/// a local variable.
 ///
 /// E.g. when compiling `(let ((a 3)) (+ a 3))`, the value of `a` will be
 /// stored in a local variable within the WebAssembly function, and the index
 /// needs to be tracked so that it can be provided to the WebAssembly
 /// local.get function when `a` is referenced within the body.
-type LocalsMap = BTreeMap<String, (u32, ValueType)>;
+type LocalsMap = BTreeMap<String, u32>;
 
 /// A key-value map for finding the index of a WebAssembly function instance
 /// which is associated with a particular identifier (string).
@@ -66,29 +63,6 @@ impl CodeGenerateState {
             locals: LocalsMap::new(),
             funcs: FuncsMap::new(),
             mem_index: 0,
-        }
-    }
-}
-
-/// Provide the appropriate representation of each type in WebAssembly.
-///
-/// This primarily pertains to how what type it needs to be if it is stored in
-/// a local variable, or is provided in a parameter, etc. Some types are stored
-/// directly (e.g. integers, booleans), while others are just stored as 32-bit
-/// pointers (e.g. strings, records) to a place in the WebAssembly memory.
-impl From<Type> for ValueType {
-    fn from(typ: Type) -> Self {
-        match typ {
-            Type::Int => ValueType::I32,
-            Type::Bool => ValueType::I32,
-            Type::Str => panic!("Unhandled type: str"),
-            Type::List(_x) => ValueType::I32,
-            Type::Func(_typs, _ret_typ) => ValueType::I32,
-            Type::Tuple(_typs) => ValueType::I32,
-            Type::Record(_fields) => panic!("Unhandled type: record"),
-            Type::Exists(_bound_var, _inner_typ) => panic!("Unhandled type: existential type"),
-            Type::TypeVar(_x) => panic!("Unhandled type: type var"),
-            Type::Unknown => panic!("Unhandled type: unknown"),
         }
     }
 }
@@ -190,7 +164,7 @@ fn gen_instr_if(
     let cons_instr = gen_instr(cons, state)?;
     let alt_instr = gen_instr(alt, state)?;
 
-    let block_type = BlockType::Value(cons.typ.clone().into());
+    let block_type = BlockType::Value(ValueType::I32);
     Ok([
         pred_instr,
         vec![Instruction::If(block_type)],
@@ -212,9 +186,7 @@ fn gen_instr_let(
     for pair in bindings {
         let local_index = state.locals.len() as u32;
         let mut exp_instr = gen_instr(&pair.1, state)?;
-        state
-            .locals
-            .insert(pair.0.clone(), (local_index, pair.1.typ.clone().into()));
+        state.locals.insert(pair.0.clone(), local_index);
         let_instr.append(&mut exp_instr);
         let_instr.push(Instruction::SetLocal(local_index));
     }
@@ -253,7 +225,7 @@ fn gen_instr_set(
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut set_instr: Vec<Instruction> = vec![];
-    let (local_idx, _wasm_type) = *(state
+    let local_idx = *(state
         .locals
         .get(sym)
         .ok_or_else(|| "Symbol not found within local scope.")?);
@@ -313,7 +285,7 @@ fn gen_instr_tuple(
         let mut exp_instr = gen_instr(exp, state)?;
         tuple_wasm_size += wasm_size_of(&exp.typ);
         tuple_instr.append(&mut exp_instr);
-        tuple_part_wasm_types.push(exp.typ.clone().into());
+        tuple_part_wasm_types.push(ValueType::I32);
     }
 
     // Allocate the stack values into linear memory by processing through them
@@ -325,18 +297,9 @@ fn gen_instr_tuple(
     // get overwritten.
     let tuple_head_idx = state.mem_index;
     state.mem_index += tuple_wasm_size;
-    for wasm_type in tuple_part_wasm_types.iter().rev() {
-        match wasm_type {
-            ValueType::I32 => {
-                state.mem_index -= 4;
-                tuple_instr.push(Instruction::I32Store(0, state.mem_index));
-            }
-            ValueType::I64 => {
-                state.mem_index -= 8;
-                tuple_instr.push(Instruction::I64Store(0, state.mem_index));
-            }
-            _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
-        }
+    for _ in 0..tuple_part_wasm_types.len() {
+        state.mem_index -= 4;
+        tuple_instr.push(Instruction::I32Store(0, state.mem_index));
     }
     state.mem_index += tuple_wasm_size;
 
@@ -370,15 +333,7 @@ fn gen_instr_tuple_get(
             for typ in inner_types {
                 match curr_key.cmp(&key) {
                     Ordering::Equal => {
-                        match typ.clone().into() {
-                            ValueType::I32 => {
-                                tuple_get_instr.push(Instruction::I32Load(0, curr_mem_offset))
-                            }
-                            ValueType::I64 => {
-                                tuple_get_instr.push(Instruction::I64Load(0, curr_mem_offset))
-                            }
-                            _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
-                        };
+                        tuple_get_instr.push(Instruction::I32Load(0, curr_mem_offset));
                         break;
                     }
                     Ordering::Greater => {
@@ -424,19 +379,11 @@ fn gen_instr_cons(
     cons_instr.push(Instruction::I32Const(0));
     let mut first_instr = gen_instr(first, state)?;
     cons_instr.append(&mut first_instr);
-    let first_wasm_type: ValueType = first.typ.clone().into();
+    let first_wasm_type = ValueType::I32;
 
     // See comment above for why this instruction is needed.
     cons_instr.push(Instruction::I32Const(0));
     let mut rest_instr = gen_instr(rest, state)?;
-    match rest.typ.clone().into() {
-        ValueType::I32 => (),
-        _ => {
-            return Err(CodeGenerateError::from(
-                "Cdr of cons is not a pointer expression.",
-            ))
-        }
-    }
     cons_instr.append(&mut rest_instr);
 
     let cons_idx = state.mem_index;
@@ -465,63 +412,30 @@ fn gen_instr_cons(
 }
 
 /// Generate instructions for a car expression.
+///
+/// Evaluating the cons expression will leave a 32-bit pointer (the address of
+/// the cons structure in WebAssembly linear memory). To obtain the first
+/// component, we access the pointer contents with no offset.
 fn gen_instr_car(
     cons: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut car_instr = gen_instr(cons, state)?;
-    // cons expressions should always return a 32-bit pointer, so the
-    // offset argument required for I32Load should be on the stack ready to use
-    let car_type = match &cons.typ {
-        Type::List(inner_type) => (**inner_type).clone(),
-        _ => {
-            return Err(CodeGenerateError::from(
-                "Cons has an invalid type annotation.",
-            ))
-        }
-    };
-    let wasm_car_type: ValueType = car_type.into();
-    match wasm_car_type {
-        ValueType::I64 => {
-            car_instr.push(Instruction::I64Load(0, 0));
-        }
-        ValueType::I32 => {
-            car_instr.push(Instruction::I32Load(0, 0));
-        }
-        _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
-    }
+    car_instr.push(Instruction::I32Load(0, 0));
     Ok(car_instr)
 }
 
 /// Generate instructions for a cdr expression.
+///
+/// Evaluating the cons expression will leave a 32-bit pointer (the address of
+/// the cons structure in WebAssembly linear memory). To obtain the second
+/// component, we access the pointer contents with a 4-byte offset.
 fn gen_instr_cdr(
     cons: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut cdr_instr = gen_instr(cons, state)?;
-    // cons expressions should always return a 32-bit pointer, so the
-    // offset argument required for I32Load should be on the stack ready to use
-    let car_type = match &cons.typ {
-        Type::List(inner_type) => (**inner_type).clone(),
-        _ => {
-            return Err(CodeGenerateError::from(
-                "Cons has an invalid type annotation.",
-            ))
-        }
-    };
-    // Depending on the size of the car of the cons expression, the pointer to
-    // the cdr expression will either be located 4 bytes or 8 bytes after
-    // the car expression
-    let wasm_car_type: ValueType = car_type.into();
-    match wasm_car_type {
-        ValueType::I64 => {
-            cdr_instr.push(Instruction::I32Load(0, 8));
-        }
-        ValueType::I32 => {
-            cdr_instr.push(Instruction::I32Load(0, 4));
-        }
-        _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
-    }
+    cdr_instr.push(Instruction::I32Load(0, 4));
     Ok(cdr_instr)
 }
 
@@ -617,7 +531,7 @@ pub fn gen_instr(
         ExprKind::Id(sym) => {
             println!("{:?}", state.locals);
             match state.locals.get(sym) {
-                Some(local_idx) => Ok(vec![Instruction::GetLocal(local_idx.0)]),
+                Some(local_idx) => Ok(vec![Instruction::GetLocal(*local_idx)]),
                 None => match state.funcs.get(sym) {
                     Some(func_idx) => Ok(vec![Instruction::I32Const(*func_idx as i32)]),
                     None => {
@@ -667,30 +581,15 @@ pub fn construct_module(
     name: &str,
     state: CodeGenerateState,
     param_types: Vec<Type>,
-    ret_type: Type,
     mut instructions: Instructions,
 ) -> builder::ModuleBuilder {
     // Construct the list of WebAssembly parameter types
-    let wasm_param_types = param_types
-        .iter()
-        .map(|typ| typ.clone().into())
+    let wasm_param_types = std::iter::repeat(ValueType::I32)
+        .take(param_types.len())
         .collect::<Vec<ValueType>>();
 
-    // Construct the list of local variables in order from state.locals,
-    // which is internally a BTreeMap. First, the map is iterated over to
-    // build a vector.
-    let mut wasm_locals = state
-        .locals
-        .iter()
-        .map(|(_sym, idx_typ_pair)| *idx_typ_pair) // iter over (key, value) in BTreeMap
-        .collect::<Vec<(u32, ValueType)>>();
-    // Sort the entires by index (since the iterator's order is not guaranteed)
-    wasm_locals.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-    // Finally, drop the indices, and construct locals using the type information
-    let wasm_locals = wasm_locals
-        .iter()
-        .map(|(_index, typ)| Local::new(1, *typ))
-        .collect::<Vec<Local>>();
+    // Construct the list of WebAssembly local types
+    let wasm_locals = construct_locals(&state.locals);
 
     // Add the required end instruction
     instructions.elements_mut().push(Instruction::End);
@@ -703,7 +602,7 @@ pub fn construct_module(
         .function()
         .signature()
         .with_params(wasm_param_types)
-        .with_return_type(Some(ret_type.into()))
+        .with_return_type(Some(ValueType::I32))
         .build()
         .body()
         .with_locals(wasm_locals)
@@ -733,23 +632,20 @@ pub fn construct_module_from_prog(prog: &Prog<TypedExpr>) -> Result<Module, Code
     prog.fns
         .iter()
         .for_each(|(name, lambda)| match &*lambda.kind {
-            ExprKind::Lambda(params, ret_type, body) => {
+            ExprKind::Lambda(params, _ret_type, body) => {
                 let param_types = params
                     .iter()
                     .map(|(_name, typ)| typ.clone())
                     .collect::<Vec<Type>>();
                 // Add the lambda's n parameters as the first n local variables
-                params.iter().for_each(|(name, typ)| {
+                params.iter().for_each(|(name, _typ)| {
                     let local_index = state.locals.len() as u32;
-                    state
-                        .locals
-                        .insert(name.clone(), (local_index, typ.clone().into()));
+                    state.locals.insert(name.clone(), local_index);
                 });
 
                 let func_instructions = gen_instr(&body, &mut state).unwrap();
                 let wasm_function = construct_function(
                     param_types,
-                    ret_type.clone(),
                     Instructions::new(func_instructions),
                     &mut state,
                 );
@@ -792,14 +688,13 @@ pub fn construct_module_from_prog(prog: &Prog<TypedExpr>) -> Result<Module, Code
     // fancy name like $$MAIN$$ and hope that nobody else uses it. :-)
     let mut main_instructions = gen_instr(&prog.exp, &mut state).unwrap();
     main_instructions.push(Instruction::End);
-    let return_type = prog.exp.typ.clone();
-    let wasm_locals = construct_locals(state.locals);
+    let wasm_locals = construct_locals(&state.locals);
     let func_index = state.funcs.len() as u32;
     Ok(module_builder
         .function()
         .signature()
         .with_params(vec![])
-        .with_return_type(Some(return_type.into()))
+        .with_return_type(Some(ValueType::I32))
         .build()
         .body()
         .with_locals(wasm_locals)
@@ -821,17 +716,15 @@ pub fn construct_module_from_prog(prog: &Prog<TypedExpr>) -> Result<Module, Code
 /// a closing `Instruction::End` instruction.
 fn construct_function(
     param_types: Vec<Type>,
-    ret_type: Type,
     mut instructions: Instructions,
     state: &mut CodeGenerateState,
 ) -> builder::FunctionDefinition {
     // Construct the list of WebAssembly parameter types
-    let wasm_param_types = param_types
-        .iter()
-        .map(|typ| typ.clone().into())
+    let wasm_param_types = std::iter::repeat(ValueType::I32)
+        .take(param_types.len())
         .collect::<Vec<ValueType>>();
 
-    let wasm_locals = construct_locals(state.locals.clone());
+    let wasm_locals = construct_locals(&state.locals);
 
     // Add the required end instruction
     instructions.elements_mut().push(Instruction::End);
@@ -840,7 +733,7 @@ fn construct_function(
     builder::function()
         .signature()
         .with_params(wasm_param_types)
-        .with_return_type(Some(ret_type.into()))
+        .with_return_type(Some(ValueType::I32))
         .build()
         .body()
         .with_locals(wasm_locals)
@@ -854,19 +747,8 @@ fn construct_function(
 /// expressions will generate local variables). These need to be converted
 /// into a format accepted by the `parity_wasm` library's `FunctionBuilder`
 /// API.
-fn construct_locals(locals: LocalsMap) -> Vec<Local> {
-    let mut locals_vec = locals
-        .iter()
-        .map(|(_name, index_type_pair)| *index_type_pair) // iterate over (key, value) in BTreeMap
-        .collect::<Vec<(u32, ValueType)>>();
-
-    // Sort the entires by index (since the the iterator produced by BTreeMap
-    // does not have a guaranteed ordering)
-    locals_vec.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-
-    // Finally, drop the indices, and construct locals using the type information
-    locals_vec
-        .iter()
-        .map(|(_index, typ)| Local::new(1, *typ))
+fn construct_locals(locals: &LocalsMap) -> Vec<Local> {
+    std::iter::repeat(Local::new(1, ValueType::I32))
+        .take(locals.len())
         .collect::<Vec<Local>>()
 }

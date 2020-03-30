@@ -15,16 +15,9 @@ use wasmer_runtime::{imports, instantiate, Value};
 /// Compiles the (untyped) expression into wasm and outputs the resulting value
 fn test_runner_exp(exp: Expr, test_name: &str) -> Value {
     let typed_exp = type_check(&exp).unwrap();
-    let exp_type = typed_exp.typ.clone();
     let mut state = CodeGenerateState::default();
     let instructions = gen_instr(&typed_exp, &mut state).unwrap();
-    let module = construct_module(
-        "$$MAIN$$",
-        state,
-        vec![],
-        exp_type,
-        Instructions::new(instructions),
-    );
+    let module = construct_module("$$MAIN$$", state, vec![], Instructions::new(instructions));
     let module = module.build();
     let binary = parity_wasm::serialize(module.clone()).unwrap();
 
