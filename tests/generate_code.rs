@@ -326,6 +326,23 @@ fn test_compile_curried_func() {
 }
 
 #[test]
+fn test_compile_extra_curried_func() {
+    let exp = parse(
+        &lexpr::from_str(
+            "(let ((f (lambda ((x : int)) : (-> int (-> int int))
+            (lambda ((y : int)) : (-> int int)
+            (lambda ((z : int)) : int (+ x (+ y z)))))))
+   (((f 4) 3) 2))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    let output = test_runner_prog(prog, "extra_curried_func.wasm");
+    assert_eq!(output, Value::I32(9));
+}
+
+#[test]
 fn test_compile_make_adder() {
     let exp = parse(
         &lexpr::from_str(
