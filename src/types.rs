@@ -1,4 +1,5 @@
-use crate::common::{transform_typed_exp_recursive, TypedExpr};
+use crate::ast_transform::transform_typed_exp_recursive;
+use crate::common::TypedExpr;
 use crate::util::format_vector;
 use im_rc::Vector;
 
@@ -13,7 +14,7 @@ pub enum Type {
     Record(Vector<(String, Type)>), // array of bindings
     Exists(u64, Box<Type>),         // abstract type T, and base type in terms of T
     TypeVar(u64),                   // abstract type T
-    Unknown,                        // placeholder
+    Unknown,                        // placeholder, for debugging etc.
 }
 
 // PartialEq is implemented manually to handle the specific case where two

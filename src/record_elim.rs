@@ -3,10 +3,10 @@
 // does transformations on the cases I am interested in, and does some form
 // of default recursion in other cases
 
-use crate::common::{
+use crate::ast_transform::{
     transform_type_recursive, transform_typed_exp_recursive, transform_typed_prog_recursive,
-    ExprKind, Prog, TypedExpr,
 };
+use crate::common::{ExprKind, Prog, TypedExpr};
 use crate::types::Type;
 use im_rc::Vector;
 

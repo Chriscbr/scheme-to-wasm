@@ -1,6 +1,5 @@
-use crate::common::{
-    transform_typed_exp_recursive, transform_typed_prog_recursive, ExprKind, Prog, TypedExpr,
-};
+use crate::ast_transform::{transform_typed_exp_recursive, transform_typed_prog_recursive};
+use crate::common::{ExprKind, Prog, TypedExpr};
 use crate::types::{type_var_substitute_recursive, Type};
 use im_rc::vector;
 

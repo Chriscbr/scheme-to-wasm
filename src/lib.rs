@@ -1,3 +1,4 @@
+pub mod ast_transform;
 pub mod closure_convert;
 pub mod common;
 pub mod compile;
