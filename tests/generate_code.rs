@@ -141,19 +141,91 @@ fn test_compile_cons() {
     assert_eq!(output, Value::I32(4));
 }
 
+// Tests lists (made with cons) parameterized over a type of more than 4 bytes
+#[test]
+fn test_compile_cons_tuple() {
+    let exp = parse(
+        &lexpr::from_str("(tuple-ref (car (cons (make-tuple 3 4) (null (tuple int int)))) 1)")
+            .unwrap(),
+    )
+    .unwrap();
+    let output = test_runner_exp(exp, "cons_tuple1.wasm");
+    assert_eq!(output, Value::I32(4));
+
+    let exp = parse(
+        &lexpr::from_str("(tuple-ref (car (cdr (cons (make-tuple 3 4) (cons (make-tuple 5 6) (null (tuple int int)))))) 1)")
+            .unwrap(),
+    )
+    .unwrap();
+    let output = test_runner_exp(exp, "cons_tuple2.wasm");
+    assert_eq!(output, Value::I32(6));
+
+    let exp = parse(
+        &lexpr::from_str("(null? (cdr (cons (make-tuple 3 4) (null (tuple int int)))))").unwrap(),
+    )
+    .unwrap();
+    let output = test_runner_exp(exp, "cons_tuple3.wasm");
+    assert_eq!(output, Value::I32(1)); // true
+
+    let exp = parse(
+        &lexpr::from_str("(null? (car (cons (make-tuple) (cons (make-tuple) (null (tuple))))))")
+            .unwrap(),
+    )
+    .unwrap();
+    let output = test_runner_exp(exp, "cons_tuple4.wasm");
+    assert_eq!(output, Value::I32(0)); // false
+
+    let exp = parse(
+        &lexpr::from_str(
+            "(begin (make-tuple 3 4)
+            (null? (cdr (cdr (cons (make-tuple) (cons (make-tuple) (null (tuple)))))))
+        )",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let output = test_runner_exp(exp, "cons_tuple5.wasm");
+    assert_eq!(output, Value::I32(1)); // true
+}
+
+// Tests tuples containing complex list types
+#[test]
+fn test_compile_tuple_cons_tuple() {
+    let exp = parse(
+        &lexpr::from_str(
+            "(tuple-ref
+                            (car
+                                (tuple-ref
+                                    (make-tuple (cons (make-tuple 15 19)
+                                                      (null (tuple int int)))
+                                                7)
+                                    0))
+                           1)",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let output = test_runner_exp(exp, "tuple_cons_tuple1.wasm");
+    assert_eq!(output, Value::I32(19));
+}
+
 #[test]
 fn test_compile_is_null() {
     let exp = parse(&lexpr::from_str("(null? (null int))").unwrap()).unwrap();
     let output = test_runner_exp(exp, "is_null1.wasm");
-    assert_eq!(output, Value::I32(1));
+    assert_eq!(output, Value::I32(1)); // true
 
     let exp = parse(&lexpr::from_str("(null? (cons 3 (null int)))").unwrap()).unwrap();
     let output = test_runner_exp(exp, "is_null2.wasm");
-    assert_eq!(output, Value::I32(0));
+    assert_eq!(output, Value::I32(0)); // false
 
     let exp = parse(&lexpr::from_str("(null? 7)").unwrap()).unwrap();
     let output = test_runner_exp(exp, "is_null3.wasm");
-    assert_eq!(output, Value::I32(0));
+    assert_eq!(output, Value::I32(0)); // false
+
+    let exp = parse(&lexpr::from_str("(null? (make-tuple))").unwrap()).unwrap();
+    let output = test_runner_exp(exp, "is_null4.wasm");
+    assert_eq!(output, Value::I32(0)); // false
 }
 
 #[test]

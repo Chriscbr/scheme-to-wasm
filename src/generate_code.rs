@@ -69,17 +69,23 @@ impl CodeGenerateState {
 
 /// Calculate the number of bytes needed to store a value of the particular
 /// type in the WebAssembly's linear memory.
+///
+/// The full size of the data structure might be large, but the value returned
+/// by this function in particular is concerned with how large are the elements
+/// if you were to pack them into a tuple. All of the values of a tuple are
+/// stored adjacently in linear memory, so that size must necessarily at least
+/// be the size of the combined inner types. But for all other complex types
+/// (such as lists), we can just put a pointer to them in the tuple we are
+/// constructing - not the entire data structure.
 fn wasm_size_of(typ: &Type) -> u32 {
     match typ {
         Type::Int => 4,
         Type::Bool => 4,
         Type::Str => panic!("Unhandled type: str"),
-        // TODO: check if this is correct; what if we have a list of tuple?
-        Type::List(inner_typ) => 4 + wasm_size_of(inner_typ),
+        Type::List(_inner_typ) => 4,
         Type::Func(_typs, _ret_typ) => 4,
         // Ensure that the size of a tuple is at least 4,
         // to handle the case of empty tuples.
-        // TODO: check to make sure this is working as intended!
         Type::Tuple(types) => cmp::max(4, types.iter().map(|typ| wasm_size_of(typ)).sum()),
         Type::Record(_fields) => panic!("Unhandled type: record"),
         Type::Exists(_bound_var, _inner_typ) => panic!("Unhandled type: existential type"),
@@ -224,13 +230,11 @@ fn gen_instr_set(
     exp: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
-    let mut set_instr: Vec<Instruction> = vec![];
     let local_idx = *(state
         .locals
         .get(sym)
         .ok_or_else(|| "Symbol not found within local scope.")?);
-    let mut exp_instr = gen_instr(exp, state)?;
-    set_instr.append(&mut exp_instr);
+    let mut set_instr = gen_instr(exp, state)?;
     set_instr.push(Instruction::TeeLocal(local_idx));
     Ok(set_instr)
 }
@@ -256,6 +260,15 @@ fn gen_instr_set(
 /// 0   4   8   12  16  20  24
 /// Stack:
 /// [ 12 ]
+///
+/// Note: In our current implementation, we make empty tuples of size "4", so
+/// all tuples take up at least 4 bytes in the heap. This ensures we don't
+/// need complex edge-case handling for handling tuple-ref's and other
+/// expressions. Hence, when an empty tuple is constructed, it will allocate
+/// a value in the heap, but it's value will be meaningless.
+/// But we are assuming through type-safety that nothing improper will happen
+/// that would try to access and use this value stored in memory (since all
+/// possible tuple-ref's will not type-check on an empty tuple).
 fn gen_instr_tuple(
     exprs: &Vector<TypedExpr>,
     state: &mut CodeGenerateState,
