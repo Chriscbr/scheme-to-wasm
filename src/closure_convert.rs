@@ -1,5 +1,5 @@
 use crate::common::{generate_env_name, generate_id, generate_var_name, Expr, ExprKind, TypeEnv};
-use crate::type_check::type_check;
+use crate::type_check::tc_with_env;
 use crate::types::Type;
 use im_rc::{vector, Vector};
 
@@ -399,7 +399,7 @@ fn cc(exp: &Expr, env: &TypeEnv) -> Result<Expr, ClosureConvertError> {
             let cbindings = cc_bindings(&bindings, env)?;
             let binding_type_map = cbindings
                 .iter()
-                .map(|pair| match type_check(&pair.1) {
+                .map(|pair| match tc_with_env(&pair.1, env) {
                     Ok(typed_exp) => Ok((pair.0.clone(), typed_exp.typ)),
                     Err(e) => Err(ClosureConvertError(format!(
                         "Type checking error during closure conversion: {}",
