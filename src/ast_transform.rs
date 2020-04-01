@@ -1,7 +1,7 @@
 /// This module contains an assortment of functions for transforming Type,
 /// Expr, and TypedExpr structs that aim to eliminate the need for
 /// re-implementing recursion on these data structures.
-use crate::common::{ExprKind, Prog, TypedExpr};
+use crate::common::{Expr, ExprKind, Prog, TypedExpr};
 use crate::type_check::validate_lambda_type;
 use crate::types::Type;
 
@@ -326,6 +326,166 @@ where
                 }
             };
             Ok(TypedExpr::new(apply_type, ExprKind::FnApp(tfunc, targs)))
+        }
+    }
+}
+
+/// Performs a lossy transformation on a typed AST, provided a function for
+/// transforming expressions and a function for transforming types.
+///
+/// By lossy, we mean to say that given a TypedExpr, this transformation will
+/// discard all type annotations and return an Expr. That said, the type
+/// information included within the existing TypedExpr can be utilized
+/// by the transformation. Also, the `transform_type` argument is still
+/// provided because even though type annotations will be discarded, some AST
+/// nodes still contain type information that may need to be transformed
+/// (e.g. the return type of a lambda expression).
+///
+/// For more specific details, see the documentation for
+/// `transform_typed_exp_recursive`.
+pub fn transform_typed_exp_lossy_recursive<'a, E, F, G>(
+    exp: &TypedExpr,
+    transform_exp: F,
+    transform_type: G,
+) -> Result<Expr, E>
+where
+    E: std::error::Error + From<&'a str>,
+    F: Fn(&TypedExpr) -> Option<Result<Expr, E>> + Copy,
+    G: Fn(&Type) -> Option<Result<Type, E>> + Copy,
+{
+    // If the user's custom `transform_exp` function has a special way to
+    // transform the provided node, then let's return that value.
+    if let Some(transformed_exp) = transform_exp(&exp) {
+        return transformed_exp;
+    }
+    // Otherwise, recurse normally according to the individual structures.
+    match &*exp.kind {
+        ExprKind::Num(x) => Ok(Expr::new(ExprKind::Num(*x))),
+        ExprKind::Bool(x) => Ok(Expr::new(ExprKind::Bool(*x))),
+        ExprKind::Str(x) => Ok(Expr::new(ExprKind::Str(x.clone()))),
+        ExprKind::Id(x) => Ok(Expr::new(ExprKind::Id(x.clone()))),
+        ExprKind::Binop(op, arg1, arg2) => {
+            let targ1 = transform_typed_exp_lossy_recursive(arg1, transform_exp, transform_type)?;
+            let targ2 = transform_typed_exp_lossy_recursive(arg2, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::Binop(*op, targ1, targ2)))
+        }
+        ExprKind::If(pred, cons, alt) => {
+            let tpred = transform_typed_exp_lossy_recursive(pred, transform_exp, transform_type)?;
+            let tcons = transform_typed_exp_lossy_recursive(cons, transform_exp, transform_type)?;
+            let talt = transform_typed_exp_lossy_recursive(alt, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::If(tpred, tcons, talt)))
+        }
+        ExprKind::Let(bindings, body) => {
+            let tbindings = bindings
+                .iter()
+                .map(|(name, subexp)| {
+                    let tsubexp =
+                        transform_typed_exp_lossy_recursive(subexp, transform_exp, transform_type)?;
+                    Ok((name.clone(), tsubexp))
+                })
+                .collect::<Result<Vector<(String, Expr)>, E>>()?;
+            let tbody = transform_typed_exp_lossy_recursive(body, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::Let(tbindings, tbody)))
+        }
+        ExprKind::Lambda(params, ret_type, body) => {
+            let tparams = params
+                .iter()
+                .map(|(name, typ)| {
+                    let ttype = transform_type_recursive(typ, transform_type)?;
+                    Ok((name.clone(), ttype))
+                })
+                .collect::<Result<Vector<(String, Type)>, E>>()?;
+            let tbody = transform_typed_exp_lossy_recursive(body, transform_exp, transform_type)?;
+            let tret_type = transform_type_recursive(ret_type, transform_type)?;
+            Ok(Expr::new(ExprKind::Lambda(tparams, tret_type, tbody)))
+        }
+        ExprKind::Begin(exps) => {
+            let texps = exps
+                .iter()
+                .map(|subexp| {
+                    transform_typed_exp_lossy_recursive(subexp, transform_exp, transform_type)
+                })
+                .collect::<Result<Vector<Expr>, E>>()?;
+            Ok(Expr::new(ExprKind::Begin(texps)))
+        }
+        ExprKind::Set(id, val) => {
+            let tval = transform_typed_exp_lossy_recursive(val, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::Set(id.clone(), tval)))
+        }
+        ExprKind::Cons(first, rest) => {
+            let tfirst = transform_typed_exp_lossy_recursive(first, transform_exp, transform_type)?;
+            let trest = transform_typed_exp_lossy_recursive(rest, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::Cons(tfirst, trest)))
+        }
+        ExprKind::Car(val) => {
+            let tval = transform_typed_exp_lossy_recursive(val, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::Car(tval)))
+        }
+        ExprKind::Cdr(val) => {
+            let tval = transform_typed_exp_lossy_recursive(val, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::Cdr(tval)))
+        }
+        ExprKind::IsNull(val) => {
+            let tval = transform_typed_exp_lossy_recursive(val, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::IsNull(tval)))
+        }
+        ExprKind::Null(typ) => {
+            let ttyp = transform_type_recursive(typ, transform_type)?;
+            Ok(Expr::new(ExprKind::Null(ttyp)))
+        }
+        ExprKind::Tuple(exps) => {
+            let texps = exps
+                .iter()
+                .map(|subexp| {
+                    transform_typed_exp_lossy_recursive(subexp, transform_exp, transform_type)
+                })
+                .collect::<Result<Vector<Expr>, E>>()?;
+            Ok(Expr::new(ExprKind::Tuple(texps)))
+        }
+        ExprKind::TupleGet(tuple, key) => {
+            let ttuple = transform_typed_exp_lossy_recursive(tuple, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::TupleGet(ttuple, *key)))
+        }
+        ExprKind::Record(bindings) => {
+            let tbindings = bindings
+                .iter()
+                .map(|(name, subexp)| {
+                    let tsubexp =
+                        transform_typed_exp_lossy_recursive(subexp, transform_exp, transform_type)?;
+                    Ok((name.clone(), tsubexp))
+                })
+                .collect::<Result<Vector<(String, Expr)>, E>>()?;
+            Ok(Expr::new(ExprKind::Record(tbindings)))
+        }
+        ExprKind::RecordGet(record, key) => {
+            let trecord =
+                transform_typed_exp_lossy_recursive(record, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::RecordGet(trecord, key.clone())))
+        }
+        ExprKind::Pack(val, sub, exist) => {
+            let tval = transform_typed_exp_lossy_recursive(val, transform_exp, transform_type)?;
+            let tsub = transform_type_recursive(sub, transform_type)?;
+            let texist = transform_type_recursive(exist, transform_type)?;
+            Ok(Expr::new(ExprKind::Pack(tval, tsub, texist)))
+        }
+        ExprKind::Unpack(var, package, typ_sub, body) => {
+            let tpackage =
+                transform_typed_exp_lossy_recursive(package, transform_exp, transform_type)?;
+            let tbody = transform_typed_exp_lossy_recursive(body, transform_exp, transform_type)?;
+            Ok(Expr::new(ExprKind::Unpack(
+                var.clone(),
+                tpackage,
+                *typ_sub,
+                tbody,
+            )))
+        }
+        ExprKind::FnApp(func, args) => {
+            let tfunc = transform_typed_exp_lossy_recursive(func, transform_exp, transform_type)?;
+            let targs = args
+                .iter()
+                .map(|arg| transform_typed_exp_lossy_recursive(arg, transform_exp, transform_type))
+                .collect::<Result<Vector<Expr>, E>>()?;
+            Ok(Expr::new(ExprKind::FnApp(tfunc, targs)))
         }
     }
 }
