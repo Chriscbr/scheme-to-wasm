@@ -221,10 +221,10 @@ impl<E: ExprMeta> Display for ExprKind<E> {
                 _ => write!(f, "(make-tuple {})", format_vector(exps.clone())),
             },
             ExprKind::TupleGet(tup, key) => write!(f, "(tuple-ref {} {})", tup, key),
-            // TODO: change to (pack typ_sub val : exist)?
+            // TODO: change to (pack type_sub val : exist)?
             ExprKind::Pack(val, sub, exist) => write!(f, "(pack {} {} {})", val, sub, exist),
-            ExprKind::Unpack(var, package, typ_sub, body) => {
-                write!(f, "(unpack ({} {} T{}) {})", var, package, typ_sub, body)
+            ExprKind::Unpack(var, package, type_sub, body) => {
+                write!(f, "(unpack ({} {} T{}) {})", var, package, type_sub, body)
             }
             ExprKind::Id(val) => write!(f, "{}", val),
             ExprKind::Num(val) => write!(f, "{}", val),

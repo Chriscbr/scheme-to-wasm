@@ -465,8 +465,8 @@ pub fn tc_with_env(value: &Expr, env: &TypeEnv) -> Result<TypedExpr, TypeCheckEr
         ExprKind::Tuple(exps) => tc_tuple_with_env(&exps, env),
         ExprKind::TupleGet(tup, key) => tc_tuple_get_with_env(&tup, *key, env),
         ExprKind::Pack(val, sub, exist) => tc_pack_with_env(&val, &sub, &exist, env),
-        ExprKind::Unpack(var, package, typ_sub, body) => {
-            tc_unpack_with_env(&var, &package, *typ_sub, &body, env)
+        ExprKind::Unpack(var, package, type_sub, body) => {
+            tc_unpack_with_env(&var, &package, *type_sub, &body, env)
         }
         ExprKind::FnApp(func, args) => tc_apply_with_env(&func, &args, env),
     }

@@ -300,12 +300,12 @@ where
                 ExprKind::Pack(tval, tsub, texist),
             ))
         }
-        ExprKind::Unpack(var, package, typ_sub, body) => {
+        ExprKind::Unpack(var, package, type_sub, body) => {
             let tpackage = transform_typed_exp_recursive(package, transform_exp, transform_type)?;
             let tbody = transform_typed_exp_recursive(body, transform_exp, transform_type)?;
             Ok(TypedExpr::new(
                 tbody.typ.clone(),
-                ExprKind::Unpack(var.clone(), tpackage, *typ_sub, tbody),
+                ExprKind::Unpack(var.clone(), tpackage, *type_sub, tbody),
             ))
         }
         ExprKind::FnApp(func, args) => {
@@ -468,14 +468,14 @@ where
             let texist = transform_type_recursive(exist, transform_type)?;
             Ok(Expr::new(ExprKind::Pack(tval, tsub, texist)))
         }
-        ExprKind::Unpack(var, package, typ_sub, body) => {
+        ExprKind::Unpack(var, package, type_sub, body) => {
             let tpackage =
                 transform_typed_exp_lossy_recursive(package, transform_exp, transform_type)?;
             let tbody = transform_typed_exp_lossy_recursive(body, transform_exp, transform_type)?;
             Ok(Expr::new(ExprKind::Unpack(
                 var.clone(),
                 tpackage,
-                *typ_sub,
+                *type_sub,
                 tbody,
             )))
         }

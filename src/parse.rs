@@ -420,9 +420,9 @@ fn parse_pack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {
         ));
     }
     let package = parse(&rest[0])?;
-    let typ_sub = parse_type(&rest[1])?;
+    let type_sub = parse_type(&rest[1])?;
     let exist_typ = parse_type(&rest[2])?;
-    Ok(Expr::new(ExprKind::Pack(package, typ_sub, exist_typ)))
+    Ok(Expr::new(ExprKind::Pack(package, type_sub, exist_typ)))
 }
 
 fn parse_unpack(rest: &[lexpr::Value]) -> Result<Expr, ParseError> {

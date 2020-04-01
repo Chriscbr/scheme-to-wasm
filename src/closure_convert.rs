@@ -276,13 +276,13 @@ fn substitute(
             .and_then(|stuple| Ok(Expr::new(ExprKind::TupleGet(stuple, *key)))),
         ExprKind::Pack(val, sub, exist) => substitute(&val, match_exp, replace_with)
             .and_then(|sval| Ok(Expr::new(ExprKind::Pack(sval, sub.clone(), exist.clone())))),
-        ExprKind::Unpack(var, package, typ_sub, body) => {
+        ExprKind::Unpack(var, package, type_sub, body) => {
             substitute(&package, match_exp, replace_with).and_then(|spackage| {
                 substitute(&body, match_exp, replace_with).and_then(|sbody| {
                     Ok(Expr::new(ExprKind::Unpack(
                         var.clone(),
                         spackage,
-                        *typ_sub,
+                        *type_sub,
                         sbody,
                     )))
                 })
@@ -344,7 +344,7 @@ fn get_free_vars(exp: &Expr) -> Result<Vector<String>, ClosureConvertError> {
         ExprKind::Tuple(vals) => get_free_vars_array(&vals),
         ExprKind::TupleGet(tuple, _key) => get_free_vars(&tuple),
         ExprKind::Pack(val, _sub, _exist) => get_free_vars(&val),
-        ExprKind::Unpack(var, package, _typ_sub, body) => {
+        ExprKind::Unpack(var, package, _type_sub, body) => {
             let mut free_vars = get_free_vars(&package)? + get_free_vars(&body)?;
             free_vars.retain(|free_var| free_var != var);
             Ok(free_vars)
@@ -445,10 +445,10 @@ fn cc(exp: &Expr, env: &TypeEnv) -> Result<Expr, ClosureConvertError> {
             cc_type(&sub)?,
             cc_type(&exist)?,
         ))),
-        ExprKind::Unpack(var, package, typ_sub, body) => Ok(Expr::new(ExprKind::Unpack(
+        ExprKind::Unpack(var, package, type_sub, body) => Ok(Expr::new(ExprKind::Unpack(
             var.clone(),
             cc(&package, env)?,
-            *typ_sub,
+            *type_sub,
             cc(&body, env)?,
         ))),
         ExprKind::FnApp(func, args) => cc_fn_app(&func, &args, env),

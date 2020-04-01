@@ -116,13 +116,13 @@ fn ll(exp: &Expr, fns: &mut Vector<(String, Expr)>) -> Result<Expr, LambdaLiftEr
             let lval = ll(&val, fns)?;
             Ok(Expr::new(ExprKind::Pack(lval, sub.clone(), exist.clone())))
         }
-        ExprKind::Unpack(var, package, typ_sub, body) => {
+        ExprKind::Unpack(var, package, type_sub, body) => {
             let lpackage = ll(&package, fns)?;
             let lbody = ll(&body, fns)?;
             Ok(Expr::new(ExprKind::Unpack(
                 var.clone(),
                 lpackage,
-                *typ_sub,
+                *type_sub,
                 lbody,
             )))
         }

@@ -507,7 +507,7 @@ fn gen_instr_pack(
 fn gen_instr_unpack(
     var: &str,
     package: &TypedExpr,
-    _typ_sub: u64,
+    _type_sub: u64,
     body: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
@@ -604,8 +604,8 @@ pub fn gen_instr(
         ExprKind::Tuple(exps) => Ok(gen_instr_tuple(&exps, state)?),
         ExprKind::TupleGet(tup, key) => Ok(gen_instr_tuple_get(&tup, *key, state)?),
         ExprKind::Pack(val, sub, exist) => Ok(gen_instr_pack(&val, &sub, &exist, state)?),
-        ExprKind::Unpack(var, package, typ_sub, body) => {
-            Ok(gen_instr_unpack(&var, &package, *typ_sub, &body, state)?)
+        ExprKind::Unpack(var, package, type_sub, body) => {
+            Ok(gen_instr_unpack(&var, &package, *type_sub, &body, state)?)
         }
         ExprKind::FnApp(func, args) => Ok(gen_instr_fn_app(&func, &args, state)?),
     };
