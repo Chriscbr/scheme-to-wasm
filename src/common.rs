@@ -623,13 +623,27 @@ impl std::fmt::Display for BinOp {
     }
 }
 
+/// TypeEnv is a data structure used to keep track of mappings from variable
+/// names to types.
+///
+/// This is used for a few different compiler passes (currently, type checking
+/// and closure converting). When bindings (identifier-type pairs) are added,
+/// new variables will "supercede" variables already within the TypeEnv which
+/// have the same name. However, this aspect of the behavior hasn't been
+/// rigorously tested.
+///
+/// As an example, when a let-expression which binds "a" to 3 is type-checked,
+/// the identifier "a" will be associated with the type "int" within the body.
+/// Thus, to type-check the body of the let-expression, the type checker needs
+/// to remember this binding and be able to find it as needed. This is achieved
+/// by passing a TypeEnv between different type-checker calls.
 #[derive(Default, Debug)]
-pub struct TypeEnv<T: Clone> {
-    bindings: Vector<(String, T)>,
+pub struct TypeEnv {
+    bindings: Vector<(String, Type)>,
 }
 
 // New values are appended to the front of the frame
-impl<T: Clone> TypeEnv<T> {
+impl TypeEnv {
     pub fn new() -> Self {
         TypeEnv {
             bindings: Vector::new(),
@@ -637,14 +651,14 @@ impl<T: Clone> TypeEnv<T> {
     }
 
     /// Returns a new environment extended with the provided binding.
-    pub fn add_binding(&self, new_binding: (String, T)) -> TypeEnv<T> {
+    pub fn add_binding(&self, new_binding: (String, Type)) -> TypeEnv {
         let mut bindings = self.bindings.clone();
         bindings.push_front(new_binding);
         TypeEnv { bindings }
     }
 
     /// Returns a new environment extended with the provided bindings.
-    pub fn add_bindings(&self, new_bindings: Vector<(String, T)>) -> TypeEnv<T> {
+    pub fn add_bindings(&self, new_bindings: Vector<(String, Type)>) -> TypeEnv {
         let mut bindings = self.bindings.clone();
         for binding in new_bindings {
             bindings.push_front(binding);
@@ -652,7 +666,7 @@ impl<T: Clone> TypeEnv<T> {
         TypeEnv { bindings }
     }
 
-    pub fn find(&self, key: &str) -> Option<&T> {
+    pub fn find(&self, key: &str) -> Option<&Type> {
         for pair in self.bindings.iter() {
             if pair.0 == key {
                 return Some(&pair.1);
@@ -662,8 +676,8 @@ impl<T: Clone> TypeEnv<T> {
     }
 }
 
-impl<T: Clone> From<Vector<(String, T)>> for TypeEnv<T> {
-    fn from(bindings: Vector<(String, T)>) -> Self {
+impl From<Vector<(String, Type)>> for TypeEnv {
+    fn from(bindings: Vector<(String, Type)>) -> Self {
         TypeEnv { bindings }
     }
 }

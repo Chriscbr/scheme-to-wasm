@@ -54,7 +54,7 @@ fn tc_binop_with_env(
     op: BinOp,
     arg1: &Expr,
     arg2: &Expr,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     let arg1_expect_typ: Type;
     let arg2_expect_typ: Type;
@@ -100,7 +100,7 @@ fn tc_if_with_env(
     predicate: &Expr,
     consequent: &Expr,
     alternate: &Expr,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     let pred = tc_with_env(predicate, env)?;
     let cons = tc_with_env(consequent, env)?;
@@ -124,7 +124,7 @@ fn tc_if_with_env(
 fn tc_let_with_env(
     bindings: &Vector<(String, Expr)>,
     body: &Expr,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     let typed_bindings: Vector<(String, TypedExpr)> = bindings
         .iter()
@@ -146,7 +146,7 @@ fn tc_lambda_with_env(
     params: &Vector<(String, Type)>,
     ret_type: &Type,
     body: &Expr,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     // Add arg types to the type environment for use in the body
     let new_env = env.add_bindings(params.clone());
@@ -167,10 +167,7 @@ fn tc_lambda_with_env(
     }
 }
 
-fn tc_begin_with_env(
-    exps: &Vector<Expr>,
-    env: &TypeEnv<Type>,
-) -> Result<TypedExpr, TypeCheckError> {
+fn tc_begin_with_env(exps: &Vector<Expr>, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {
     // Note: even though we only return the type of the
     // last expression within the 'begin' S-expression, we still want to
     // type-check the entire array in case any type errors pop up
@@ -189,7 +186,7 @@ fn tc_begin_with_env(
 fn tc_set_bang_with_env(
     var: &str,
     new_val: &Expr,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     let expected_typ = env
         .find(var)
@@ -208,11 +205,7 @@ fn tc_set_bang_with_env(
     }
 }
 
-fn tc_cons_with_env(
-    first: &Expr,
-    rest: &Expr,
-    env: &TypeEnv<Type>,
-) -> Result<TypedExpr, TypeCheckError> {
+fn tc_cons_with_env(first: &Expr, rest: &Expr, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {
     let car = tc_with_env(first, env)?;
     let cdr = tc_with_env(rest, env)?;
     match cdr.typ.clone() {
@@ -234,7 +227,7 @@ fn tc_cons_with_env(
     }
 }
 
-fn tc_car_with_env(pair: &Expr, env: &TypeEnv<Type>) -> Result<TypedExpr, TypeCheckError> {
+fn tc_car_with_env(pair: &Expr, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {
     let pair = tc_with_env(pair, env)?;
     match pair.typ.clone() {
         Type::List(boxed_type) => Ok(TypedExpr::new(*boxed_type, ExprKind::Car(pair))),
@@ -244,7 +237,7 @@ fn tc_car_with_env(pair: &Expr, env: &TypeEnv<Type>) -> Result<TypedExpr, TypeCh
     }
 }
 
-fn tc_cdr_with_env(pair: &Expr, env: &TypeEnv<Type>) -> Result<TypedExpr, TypeCheckError> {
+fn tc_cdr_with_env(pair: &Expr, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {
     let pair = tc_with_env(pair, env)?;
     match pair.typ.clone() {
         Type::List(boxed_type) => Ok(TypedExpr::new(
@@ -257,10 +250,7 @@ fn tc_cdr_with_env(pair: &Expr, env: &TypeEnv<Type>) -> Result<TypedExpr, TypeCh
     }
 }
 
-fn tc_tuple_with_env(
-    exps: &Vector<Expr>,
-    env: &TypeEnv<Type>,
-) -> Result<TypedExpr, TypeCheckError> {
+fn tc_tuple_with_env(exps: &Vector<Expr>, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {
     let typed_exps = tc_array_with_env(exps, env)?;
     let inner_types = typed_exps
         .iter()
@@ -272,11 +262,7 @@ fn tc_tuple_with_env(
     ))
 }
 
-fn tc_tuple_get_with_env(
-    tup: &Expr,
-    key: u32,
-    env: &TypeEnv<Type>,
-) -> Result<TypedExpr, TypeCheckError> {
+fn tc_tuple_get_with_env(tup: &Expr, key: u32, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {
     let tup = tc_with_env(tup, env)?;
     match tup.typ.clone() {
         Type::Tuple(vec) => {
@@ -297,7 +283,7 @@ fn tc_tuple_get_with_env(
 
 fn tc_record_with_env(
     bindings: &Vector<(String, Expr)>,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     let typed_bindings = bindings
         .iter()
@@ -316,7 +302,7 @@ fn tc_record_with_env(
 fn tc_record_get_with_env(
     record: &Expr,
     key: &str,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     let typed_record = tc_with_env(record, env)?;
     match typed_record.typ.clone() {
@@ -346,7 +332,7 @@ fn tc_record_get_with_env(
 fn tc_apply_with_env(
     func: &Expr,
     args: &Vector<Expr>,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     let func = tc_with_env(func, env)?;
     let params = tc_array_with_env(&args, env)?;
@@ -360,7 +346,7 @@ fn tc_apply_with_env(
     Ok(TypedExpr::new(lambda_type, ExprKind::FnApp(func, params)))
 }
 
-fn tc_is_null_with_env(exp: &Expr, env: &TypeEnv<Type>) -> Result<TypedExpr, TypeCheckError> {
+fn tc_is_null_with_env(exp: &Expr, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {
     let typed_exp = tc_with_env(exp, env)?;
     Ok(TypedExpr::new(Type::Bool, ExprKind::IsNull(typed_exp)))
 }
@@ -369,7 +355,7 @@ fn tc_pack_with_env(
     packed_exp: &Expr,
     sub: &Type,
     exist: &Type,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     if let Type::Exists(type_var, base_typ) = exist {
         // substitute "sub" for all occurrences of type_var (the quantified type) in exist
@@ -398,7 +384,7 @@ fn tc_unpack_with_env(
     package: &Expr,
     typ_var: u64,
     body: &Expr,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     // Calculate the existential type of the package
     let package = tc_with_env(package, env)?;
@@ -438,12 +424,12 @@ fn tc_unpack_with_env(
 
 fn tc_array_with_env(
     values: &Vector<Expr>,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<Vector<TypedExpr>, TypeCheckError> {
     values.iter().map(|val| tc_with_env(val, env)).collect()
 }
 
-pub fn tc_with_env(value: &Expr, env: &TypeEnv<Type>) -> Result<TypedExpr, TypeCheckError> {
+pub fn tc_with_env(value: &Expr, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {
     match &*value.kind {
         ExprKind::Num(x) => Ok(TypedExpr::new(Type::Int, ExprKind::Num(*x))),
         ExprKind::Bool(x) => Ok(TypedExpr::new(Type::Bool, ExprKind::Bool(*x))),

@@ -68,7 +68,7 @@ fn cc_type_array(typs: &Vector<Type>) -> Result<Vector<Type>, ClosureConvertErro
 
 fn cc_bindings(
     bindings: &Vector<(String, Expr)>,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<Vector<(String, Expr)>, ClosureConvertError> {
     bindings
         .iter()
@@ -80,7 +80,7 @@ fn cc_lambda(
     params: &Vector<(String, Type)>,
     ret_type: &Type,
     body: &Expr,
-    env: &TypeEnv<Type>,
+    env: &TypeEnv,
 ) -> Result<Expr, ClosureConvertError> {
     // Closure convert the body, with knowledge of the types of the lambda's parameters
     let mut new_body = cc(body, &env.add_bindings(params.clone()))?;
@@ -155,11 +155,7 @@ fn cc_lambda(
     )))
 }
 
-fn cc_fn_app(
-    func: &Expr,
-    args: &Vector<Expr>,
-    env: &TypeEnv<Type>,
-) -> Result<Expr, ClosureConvertError> {
+fn cc_fn_app(func: &Expr, args: &Vector<Expr>, env: &TypeEnv) -> Result<Expr, ClosureConvertError> {
     let tuple_name = generate_var_name();
     let tuple_name_id = Expr::new(ExprKind::Id(tuple_name.clone()));
     let package = cc(func, env)?;
@@ -383,7 +379,7 @@ pub fn closure_convert(exp: &Expr) -> Result<Expr, ClosureConvertError> {
 /// other lambdas) so that we can properly generate the right type signatures
 /// of record environments (i.e. the "envX" which becomes the first argument
 /// of all new lambdas).
-fn cc(exp: &Expr, env: &TypeEnv<Type>) -> Result<Expr, ClosureConvertError> {
+fn cc(exp: &Expr, env: &TypeEnv) -> Result<Expr, ClosureConvertError> {
     match &*exp.kind {
         ExprKind::Num(x) => Ok(Expr::new(ExprKind::Num(*x))),
         ExprKind::Bool(x) => Ok(Expr::new(ExprKind::Bool(*x))),
