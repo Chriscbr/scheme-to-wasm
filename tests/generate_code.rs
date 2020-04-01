@@ -272,23 +272,73 @@ fn test_compile_func_without_closure_conversion() {
 }
 
 #[test]
-fn test_compile_func1() {
+fn test_compile_func_simple() {
     let exp = parse(&lexpr::from_str("((lambda ((x : int)) : int (+ x 1)) 5)").unwrap()).unwrap();
     let prog = compile_exp(&exp).unwrap();
-    println!("{}", prog);
-    let output = test_runner_prog(prog, "func1.wasm");
+    let output = test_runner_prog(prog, "func_simple.wasm");
     assert_eq!(output, Value::I32(6));
 }
 
 #[test]
-fn test_compile_func2() {
+fn test_compile_func_free_var() {
     let exp =
         parse(&lexpr::from_str("(let ((a 3)) ((lambda ((x : int)) : int (+ x a)) 5))").unwrap())
             .unwrap();
     let prog = compile_exp(&exp).unwrap();
-    println!("{}", prog);
-    let output = test_runner_prog(prog, "func2.wasm");
+    let output = test_runner_prog(prog, "func_free_var.wasm");
     assert_eq!(output, Value::I32(8));
+}
+
+#[test]
+fn test_compile_named_func() {
+    let exp =
+        parse(&lexpr::from_str("(let ((a (lambda ((x : int)) : int (+ x 1)))) (a 3))").unwrap())
+            .unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    let output = test_runner_prog(prog, "named_func.wasm");
+    assert_eq!(output, Value::I32(4));
+}
+
+#[test]
+fn test_compile_func_two_arg() {
+    let exp =
+        parse(&lexpr::from_str("((lambda ((x : int) (y : int)) : int (* x y)) 5 6)").unwrap())
+            .unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    let output = test_runner_prog(prog, "func_two_arg.wasm");
+    assert_eq!(output, Value::I32(30));
+}
+
+#[test]
+fn test_compile_curried_func() {
+    let exp = parse(
+        &lexpr::from_str(
+            "(let ((f (lambda ((x : int)) : (-> int int)
+            (lambda ((y : int)) : int (+ x y)))))
+   ((f 4) 3))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    let output = test_runner_prog(prog, "curried_func.wasm");
+    assert_eq!(output, Value::I32(7));
+}
+
+#[test]
+fn test_compile_make_adder() {
+    let exp = parse(
+        &lexpr::from_str(
+            "(let ((make-adder (lambda ((x : int)) : (-> int int)
+            (lambda ((y : int)) : int (+ x y)))))
+   (let ((add3 (make-adder 3))) (* (add3 2) (add3 4))))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    let output = test_runner_prog(prog, "make_adder.wasm");
+    assert_eq!(output, Value::I32(35));
 }
 
 #[test]

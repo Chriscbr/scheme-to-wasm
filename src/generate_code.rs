@@ -88,8 +88,8 @@ fn wasm_size_of(typ: &Type) -> u32 {
         // to handle the case of empty tuples.
         Type::Tuple(types) => cmp::max(4, types.iter().map(|typ| wasm_size_of(typ)).sum()),
         Type::Record(_fields) => panic!("Unhandled type: record"),
-        Type::Exists(_bound_var, _inner_typ) => panic!("Unhandled type: existential type"),
-        Type::TypeVar(_x) => panic!("Unhandled type: type var"),
+        Type::Exists(_bound_var, inner_typ) => wasm_size_of(inner_typ),
+        Type::TypeVar(_x) => 4, // ??? not sure what to put here
         Type::Unknown => panic!("Unhandled type: unknown"),
     }
 }
@@ -495,6 +495,33 @@ fn gen_instr_is_null(
     }
 }
 
+fn gen_instr_pack(
+    val: &TypedExpr,
+    _sub: &Type,
+    _exist: &Type,
+    state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    gen_instr(val, state)
+}
+
+fn gen_instr_unpack(
+    var: &str,
+    package: &TypedExpr,
+    _typ_sub: u64,
+    body: &TypedExpr,
+    state: &mut CodeGenerateState,
+) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let mut let_instr: Vec<Instruction> = vec![];
+    let local_index = state.locals.len() as u32;
+    let mut exp_instr = gen_instr(package, state)?;
+    state.locals.insert(var.to_string(), local_index);
+    let_instr.append(&mut exp_instr);
+    let_instr.push(Instruction::SetLocal(local_index));
+    let body_instr = gen_instr(body, state)?;
+
+    Ok([let_instr, body_instr].concat())
+}
+
 fn gen_instr_fn_app(
     func: &TypedExpr,
     args: &Vector<TypedExpr>,
@@ -558,9 +585,9 @@ pub fn gen_instr(
         ExprKind::Binop(op, arg1, arg2) => Ok(gen_instr_binop(*op, &arg1, &arg2, state)?),
         ExprKind::If(pred, cons, alt) => Ok(gen_instr_if(&pred, &cons, &alt, state)?),
         ExprKind::Let(bindings, body) => Ok(gen_instr_let(&bindings, &body, state)?),
-        // ExprKind::Lambda(params, ret_typ, body) => {
-        //     tc_lambda_with_env(&params, &ret_typ, &body, env)
-        // }
+        ExprKind::Lambda(_params, _ret_type, _body) => Err(CodeGenerateError::from(
+            "Lambda expressions should have been hoisted to the top level via lambda lifting pass.",
+        )),
         ExprKind::Record(_bindings) => Err(CodeGenerateError::from(
             "Record expressions should be removed via record conversion pass.",
         )),
@@ -576,12 +603,11 @@ pub fn gen_instr(
         ExprKind::Null(typ) => Ok(gen_instr_null(&typ, state)?),
         ExprKind::Tuple(exps) => Ok(gen_instr_tuple(&exps, state)?),
         ExprKind::TupleGet(tup, key) => Ok(gen_instr_tuple_get(&tup, *key, state)?),
-        // ExprKind::Pack(val, sub, exist) => tc_pack_with_env(&val, &sub, &exist, env),
-        // ExprKind::Unpack(var, package, typ_sub, body) => {
-        //     tc_unpack_with_env(&var, &package, *typ_sub, &body, env)
-        // }
+        ExprKind::Pack(val, sub, exist) => Ok(gen_instr_pack(&val, &sub, &exist, state)?),
+        ExprKind::Unpack(var, package, typ_sub, body) => {
+            Ok(gen_instr_unpack(&var, &package, *typ_sub, &body, state)?)
+        }
         ExprKind::FnApp(func, args) => Ok(gen_instr_fn_app(&func, &args, state)?),
-        _ => Err(CodeGenerateError::from("Unhandled expression kind.")),
     };
     Ok(instructions?)
 }
