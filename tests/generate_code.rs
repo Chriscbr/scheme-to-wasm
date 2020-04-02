@@ -359,6 +359,24 @@ fn test_compile_make_adder() {
 }
 
 #[test]
+fn test_compile_make_adder_scoped() {
+    let exp = parse(
+        &lexpr::from_str(
+            "(let ((make-adder (lambda ((x : int)) : (-> int int)
+                (lambda ((y : int)) : int (+ x y)))))
+                    (let ((f (let ((xx 100))
+                        (make-adder xx))))
+                    (f 200)))",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    let output = test_runner_prog(prog, "make_adder_scoped.wasm");
+    assert_eq!(output, Value::I32(300));
+}
+
+#[test]
 fn test_handwritten_lambda() {
     let module = builder::module()
         .table()
