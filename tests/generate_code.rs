@@ -9,8 +9,14 @@ use scheme_to_wasm::types::Type;
 
 use im_rc::vector;
 use parity_wasm::builder;
-use parity_wasm::elements::{Instruction, Instructions, ValueType};
+use parity_wasm::elements::{Instruction, Instructions, Module, ValueType};
 use wasmer_runtime::{imports, instantiate, Value};
+
+fn output_wasm_to_file(module: Module, test_name: &str) {
+    let output_dir = std::env::current_dir().unwrap().join("wasm-output");
+    std::fs::create_dir_all(output_dir.clone()).unwrap();
+    parity_wasm::serialize_to_file(output_dir.join(test_name), module).unwrap();
+}
 
 /// Compiles the (untyped) expression into wasm and outputs the resulting value
 fn test_runner_exp(exp: Expr, test_name: &str) -> Value {
@@ -20,10 +26,7 @@ fn test_runner_exp(exp: Expr, test_name: &str) -> Value {
     let module = construct_module("$$MAIN$$", state, vec![], Instructions::new(instructions));
     let module = module.build();
     let binary = parity_wasm::serialize(module.clone()).unwrap();
-
-    // output to file for debugging
-    parity_wasm::serialize_to_file(std::env::current_dir().unwrap().join(test_name), module)
-        .unwrap();
+    output_wasm_to_file(module, test_name);
 
     let import_object = imports! {};
     let instance = instantiate(&binary, &import_object).unwrap();
@@ -35,12 +38,8 @@ fn test_runner_exp(exp: Expr, test_name: &str) -> Value {
 /// Compiles the (typed) program into wasm and outputs the resulting value
 fn test_runner_prog(prog: Prog<TypedExpr>, test_name: &str) -> Value {
     let module = construct_module_from_prog(&prog).unwrap();
-
     let binary = parity_wasm::serialize(module.clone()).unwrap();
-
-    // output to file for debugging
-    parity_wasm::serialize_to_file(std::env::current_dir().unwrap().join(test_name), module)
-        .unwrap();
+    output_wasm_to_file(module, test_name);
 
     let import_object = imports! {};
     let instance = instantiate(&binary, &import_object).unwrap();
@@ -103,13 +102,13 @@ fn test_compile_tuple() {
 fn test_compile_nested_tuple() {
     let exp = parse(
         &lexpr::from_str(
-            "(tuple-ref (tuple-ref (make-tuple (make-tuple 5 6) 7 (make-tuple 8 9)) 0) 1)",
+            "(tuple-ref (tuple-ref (make-tuple (make-tuple 5 6) 7 (make-tuple 11 13)) 2) 1)",
         )
         .unwrap(),
     )
     .unwrap();
     let output = test_runner_exp(exp, "nested_tuple.wasm");
-    assert_eq!(output, Value::I32(6));
+    assert_eq!(output, Value::I32(13));
 }
 
 #[test]
@@ -377,6 +376,25 @@ fn test_compile_make_adder_scoped() {
 }
 
 #[test]
+fn test_compile_prepend() {
+    let exp = parse(
+        &lexpr::from_str(
+            r#"
+(let ((prepend1 (lambda ((lst : (list int))) : (list int)
+            (cons 1 lst))))
+(let ((a (prepend1 (cons 3 (cons 4 (null int))))))
+  (+ (car a) (car (cdr a)))))
+                "#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    let output = test_runner_prog(prog, "prepend1.wasm");
+    assert_eq!(output, Value::I32(4));
+}
+
+#[test]
 fn test_handwritten_lambda() {
     let module = builder::module()
         .table()
@@ -428,20 +446,11 @@ fn test_handwritten_lambda() {
         .func(1)
         .build()
         .build();
-
-    let output = parity_wasm::serialize(module.clone()).unwrap();
-
-    // output to file for debugging
-    parity_wasm::serialize_to_file(
-        std::env::current_dir()
-            .unwrap()
-            .join("handwritten_lambda.wasm"),
-        module,
-    )
-    .unwrap();
+    let binary = parity_wasm::serialize(module.clone()).unwrap();
+    output_wasm_to_file(module, "handwritten_lambda.wasm");
 
     let import_object = imports! {};
-    let instance = instantiate(&output, &import_object).unwrap();
+    let instance = instantiate(&binary, &import_object).unwrap();
     let values = instance.dyn_func("main").unwrap().call(&[]).unwrap();
 
     assert_eq!(values[0], Value::I32(6));
@@ -475,20 +484,11 @@ fn test_handwritten_tuple() {
         .func(0)
         .build()
         .build();
-
-    let output = parity_wasm::serialize(module.clone()).unwrap();
-
-    // output to file for debugging
-    parity_wasm::serialize_to_file(
-        std::env::current_dir()
-            .unwrap()
-            .join("handwritten_tuple.wasm"),
-        module,
-    )
-    .unwrap();
+    let binary = parity_wasm::serialize(module.clone()).unwrap();
+    output_wasm_to_file(module, "handwritten_tuple.wasm");
 
     let import_object = imports! {};
-    let instance = instantiate(&output, &import_object).unwrap();
+    let instance = instantiate(&binary, &import_object).unwrap();
     let values = instance.dyn_func("main").unwrap().call(&[]).unwrap();
 
     assert_eq!(values[0], Value::I32(10));

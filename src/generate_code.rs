@@ -1,7 +1,6 @@
 use crate::common::{BinOp, ExprKind, Prog, TypedExpr};
 use crate::types::Type;
 
-use std::cmp;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -64,33 +63,6 @@ impl CodeGenerateState {
             funcs: FuncsMap::new(),
             mem_index: 0,
         }
-    }
-}
-
-/// Calculate the number of bytes needed to store a value of the particular
-/// type in the WebAssembly's linear memory.
-///
-/// The full size of the data structure might be large, but the value returned
-/// by this function in particular is concerned with how large are the elements
-/// if you were to pack them into a tuple. All of the values of a tuple are
-/// stored adjacently in linear memory, so that size must necessarily at least
-/// be the size of the combined inner types. But for all other complex types
-/// (such as lists), we can just put a pointer to them in the tuple we are
-/// constructing - not the entire data structure.
-fn wasm_size_of(typ: &Type) -> u32 {
-    match typ {
-        Type::Int => 4,
-        Type::Bool => 4,
-        Type::Str => panic!("Unhandled type: str"),
-        Type::List(_inner_typ) => 4,
-        Type::Func(_typs, _ret_typ) => 4,
-        // Ensure that the size of a tuple is at least 4,
-        // to handle the case of empty tuples.
-        Type::Tuple(types) => cmp::max(4, types.iter().map(|typ| wasm_size_of(typ)).sum()),
-        Type::Record(_fields) => panic!("Unhandled type: record"),
-        Type::Exists(_bound_var, inner_typ) => wasm_size_of(inner_typ),
-        Type::TypeVar(_x) => 4, // ??? not sure what to put here
-        Type::Unknown => panic!("Unhandled type: unknown"),
     }
 }
 
@@ -296,7 +268,7 @@ fn gen_instr_tuple(
         tuple_instr.push(Instruction::I32Const(0));
 
         let mut exp_instr = gen_instr(exp, state)?;
-        tuple_wasm_size += wasm_size_of(&exp.typ);
+        tuple_wasm_size += 4; // all tuple components take up 4 bytes in memory
         tuple_instr.append(&mut exp_instr);
         tuple_part_wasm_types.push(ValueType::I32);
     }
@@ -343,7 +315,7 @@ fn gen_instr_tuple_get(
     let mut curr_mem_offset: u32 = 0;
     match &tuple.typ {
         Type::Tuple(inner_types) => {
-            for typ in inner_types {
+            for _ in 0..inner_types.len() {
                 match curr_key.cmp(&key) {
                     Ordering::Equal => {
                         tuple_get_instr.push(Instruction::I32Load(0, curr_mem_offset));
@@ -353,8 +325,7 @@ fn gen_instr_tuple_get(
                         return Err(CodeGenerateError::from("Memory alignment error."))
                     }
                     Ordering::Less => {
-                        let type_size = wasm_size_of(&typ);
-                        curr_mem_offset += type_size;
+                        curr_mem_offset += 4; // all tuple components take up 4 bytes in memory
                         curr_key += 1;
                     }
                 }
@@ -568,20 +539,17 @@ pub fn gen_instr(
         ExprKind::Num(x) => Ok(vec![Instruction::I32Const(*x)]),
         ExprKind::Bool(x) => Ok(vec![Instruction::I32Const(*x as i32)]),
         ExprKind::Str(_) => panic!("Unhandled gen_instr case: Str"),
-        ExprKind::Id(sym) => {
-            println!("{:?}", state.locals);
-            match state.locals.get(sym) {
-                Some(local_idx) => Ok(vec![Instruction::GetLocal(*local_idx)]),
-                None => match state.funcs.get(sym) {
-                    Some(func_idx) => Ok(vec![Instruction::I32Const(*func_idx as i32)]),
-                    None => {
-                        return Err(CodeGenerateError::from(
-                            "Symbol not found in locals or function table.",
-                        ))
-                    }
-                },
-            }
-        }
+        ExprKind::Id(sym) => match state.locals.get(sym) {
+            Some(local_idx) => Ok(vec![Instruction::GetLocal(*local_idx)]),
+            None => match state.funcs.get(sym) {
+                Some(func_idx) => Ok(vec![Instruction::I32Const(*func_idx as i32)]),
+                None => {
+                    return Err(CodeGenerateError::from(
+                        "Symbol not found in locals or function table.",
+                    ))
+                }
+            },
+        },
         ExprKind::Binop(op, arg1, arg2) => Ok(gen_instr_binop(*op, &arg1, &arg2, state)?),
         ExprKind::If(pred, cons, alt) => Ok(gen_instr_if(&pred, &cons, &alt, state)?),
         ExprKind::Let(bindings, body) => Ok(gen_instr_let(&bindings, &body, state)?),

@@ -30,6 +30,10 @@ fn ll_array(
 
 fn ll(exp: &Expr, fns: &mut Vector<(String, Expr)>) -> Result<Expr, LambdaLiftError> {
     match &*exp.kind {
+        ExprKind::Num(_) => Ok(exp.clone()),
+        ExprKind::Bool(_) => Ok(exp.clone()),
+        ExprKind::Str(_) => Ok(exp.clone()),
+        ExprKind::Id(_) => Ok(exp.clone()),
         ExprKind::Binop(op, exp1, exp2) => {
             let lexp1 = ll(&exp1, fns)?;
             let lexp2 = ll(&exp2, fns)?;
@@ -126,10 +130,6 @@ fn ll(exp: &Expr, fns: &mut Vector<(String, Expr)>) -> Result<Expr, LambdaLiftEr
                 lbody,
             )))
         }
-        ExprKind::Id(_) => Ok(exp.clone()),
-        ExprKind::Num(_) => Ok(exp.clone()),
-        ExprKind::Bool(_) => Ok(exp.clone()),
-        ExprKind::Str(_) => Ok(exp.clone()),
     }
 }
 
