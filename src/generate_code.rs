@@ -1,7 +1,6 @@
 use crate::common::{BinOp, ExprKind, Prog, TypedExpr};
 use crate::types::Type;
 
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use im_rc::Vector;
@@ -66,72 +65,32 @@ impl CodeGenerateState {
     }
 }
 
+/// Generate instructions for a binop (binary operation) expression.
 fn gen_instr_binop(
     op: BinOp,
     arg1: &TypedExpr,
     arg2: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
+    let arg1_instr = gen_instr(arg1, state)?;
+    let arg2_instr = gen_instr(arg2, state)?;
     match op {
-        BinOp::Add => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Add]].concat())
-        }
-        BinOp::Subtract => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Sub]].concat())
-        }
-        BinOp::Multiply => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Mul]].concat())
-        }
-        BinOp::Divide => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32DivS]].concat())
-        }
-        BinOp::LessThan => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32LtS]].concat())
-        }
-        BinOp::GreaterThan => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32GtS]].concat())
-        }
-        BinOp::LessOrEqual => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32LeS]].concat())
-        }
-        BinOp::GreaterOrEqual => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32GeS]].concat())
-        }
-        BinOp::EqualTo => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Eq]].concat())
-        }
-        BinOp::And => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32And]].concat())
-        }
-        BinOp::Or => {
-            let arg1_instr = gen_instr(arg1, state)?;
-            let arg2_instr = gen_instr(arg2, state)?;
-            Ok([arg1_instr, arg2_instr, vec![Instruction::I32Or]].concat())
-        }
+        BinOp::Add => Ok([arg1_instr, arg2_instr, vec![Instruction::I32Add]].concat()),
+        BinOp::Subtract => Ok([arg1_instr, arg2_instr, vec![Instruction::I32Sub]].concat()),
+        BinOp::Multiply => Ok([arg1_instr, arg2_instr, vec![Instruction::I32Mul]].concat()),
+        BinOp::Divide => Ok([arg1_instr, arg2_instr, vec![Instruction::I32DivS]].concat()),
+        BinOp::LessThan => Ok([arg1_instr, arg2_instr, vec![Instruction::I32LtS]].concat()),
+        BinOp::GreaterThan => Ok([arg1_instr, arg2_instr, vec![Instruction::I32GtS]].concat()),
+        BinOp::LessOrEqual => Ok([arg1_instr, arg2_instr, vec![Instruction::I32LeS]].concat()),
+        BinOp::GreaterOrEqual => Ok([arg1_instr, arg2_instr, vec![Instruction::I32GeS]].concat()),
+        BinOp::EqualTo => Ok([arg1_instr, arg2_instr, vec![Instruction::I32Eq]].concat()),
+        BinOp::And => Ok([arg1_instr, arg2_instr, vec![Instruction::I32And]].concat()),
+        BinOp::Or => Ok([arg1_instr, arg2_instr, vec![Instruction::I32Or]].concat()),
         BinOp::Concat => Err(CodeGenerateError::from("Unhandled binop: concat.")),
     }
 }
 
+/// Generate instructions for an if expression.
 fn gen_instr_if(
     pred: &TypedExpr,
     cons: &TypedExpr,
@@ -142,6 +101,13 @@ fn gen_instr_if(
     let cons_instr = gen_instr(cons, state)?;
     let alt_instr = gen_instr(alt, state)?;
 
+    // In WebAssembly, if-expressions must be given a type annotation of the
+    // type of the block, so that during validation, the values produced
+    // in each branch can be verified to have the same type in both cases.
+    //
+    // Since all values in our language are all 4 bytes in size (either
+    // primtivies or pointers to the linear memory), we declare the block
+    // type as I32.
     let block_type = BlockType::Value(ValueType::I32);
     Ok([
         pred_instr,
@@ -155,6 +121,11 @@ fn gen_instr_if(
 }
 
 /// Generate instructions for a let expression.
+///
+/// For each binding made within a let expression, we will create a
+/// WebAssembly local variable to keep track of the value, for whichever
+/// function this let expression is being compiled into. This gets tracked
+/// within `state.locals`.
 fn gen_instr_let(
     bindings: &Vector<(String, TypedExpr)>,
     body: &TypedExpr,
@@ -162,27 +133,35 @@ fn gen_instr_let(
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut let_instr: Vec<Instruction> = vec![];
     for pair in bindings {
-        let local_index = state.locals.len() as u32;
         let mut exp_instr = gen_instr(&pair.1, state)?;
+        let local_index = state.locals.len() as u32;
         state.locals.insert(pair.0.clone(), local_index);
         let_instr.append(&mut exp_instr);
+        // SetLocal will pop the current value from the stack and store it
+        // in nth local variable, where n is the index passed in.
+        //
+        // Note that if the WebAssembly function ends up having k parameters
+        // and n local variables, the first k local variables will actually
+        // correspond to the parameters - so the total range of indices will
+        // be from 0 to n+k-1.
         let_instr.push(Instruction::SetLocal(local_index));
     }
-    let body_instr = gen_instr(body, state)?;
-
-    Ok([let_instr, body_instr].concat())
+    let mut body_instr = gen_instr(body, state)?;
+    let_instr.append(&mut body_instr);
+    Ok(let_instr)
 }
 
 /// Generate instructions for a begin expression.
+///
+/// We can assume from the type checking that exps contains at least one
+/// subexpression.
 fn gen_instr_begin(
     exps: &Vector<TypedExpr>,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
-    if exps.is_empty() {
-        return Err(CodeGenerateError::from(
-            "Begin expression contains no subexpressions!",
-        ));
-    }
+    // We separate the list of n expressions into the first n-1 expressions and
+    // the last expression, since we will end up dropping any values produced
+    // by the first n-1 expressions.
     let first_exps = exps.iter().take(exps.len() - 1);
     let last_exp = exps.last().unwrap();
     let mut begin_instr: Vec<Instruction> = vec![];
@@ -202,28 +181,35 @@ fn gen_instr_set(
     exp: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
+    // set! only semantically makes sense if the symbol provided is the name
+    // of a function parameter or a local variable (created by let). So we
+    // must look the WebAssembly local index corresponding to the name.
     let local_idx = *(state
         .locals
         .get(sym)
         .ok_or_else(|| "Symbol not found within local scope.")?);
     let mut set_instr = gen_instr(exp, state)?;
+    // WebAssembly's TeeLocal instruction will put a copy of the local
+    // variable's value on top of the stack.
     set_instr.push(Instruction::TeeLocal(local_idx));
     Ok(set_instr)
 }
 
 /// Generate instructions for a make-tuple expression.
 ///
-/// The general idea is to insert each part of the tuple into linear memory,
-/// so that they are all in order (and hence can be easily retrieved). The
-/// the pointer for the head of the tuple is left on the top of the stack.
+/// The general idea is to insert each part of the tuple into WebAssembly's
+/// linear memory in order (i.e. contiguously) so that they can be easily
+/// retrieved. The pointer for the head of the tuple is left on the top of the
+/// stack, so that the nth component of the tuple can be retrieved by loading
+/// from the linear memory at mem[head_index + 4 * n].
 ///
-/// In the example below, a tuple with three parts (A, B, C) is created, where
-/// A and B are two arbitrary values that require memory allocation, and C is
-/// just a number. The instructions for calculating A, B, and C are generated,
-/// which include several memory allocations. Then, the values left on the
-/// stack (a pointer to A, a pointer to B, and the value of C) are stored in
-/// linear memory (in order), with the index of the beginning (12 in the
-/// diagram) left on top of the stack.
+/// In the example below, a tuple with three parts (A, B, C) is constructed,
+/// where A and B are two arbitrary values that require memory allocation, and
+/// C is just a number. The instructions for calculating A, B, and C are
+/// generated, which results in A and B getting allocated into memory at 0 and
+/// 4 respectively. Then, the values left on the stack (a pointer to A (0),
+/// a pointer to B (4), and the value of C (C)) are stored in the linear memory
+/// (at indices 12, 16, and 20), with the first index put on the stack.
 ///
 /// Memory:
 /// +---+---+---+---+---+---+
@@ -234,13 +220,17 @@ fn gen_instr_set(
 /// [ 12 ]
 ///
 /// Note: In our current implementation, we make empty tuples of size "4", so
-/// all tuples take up at least 4 bytes in the heap. This ensures we don't
-/// need complex edge-case handling for handling tuple-ref's and other
-/// expressions. Hence, when an empty tuple is constructed, it will allocate
-/// a value in the heap, but it's value will be meaningless.
-/// But we are assuming through type-safety that nothing improper will happen
-/// that would try to access and use this value stored in memory (since all
-/// possible tuple-ref's will not type-check on an empty tuple).
+/// all tuples take up at least 4 bytes in the heap. This reduces our need to
+/// handle complex edge cases. Thus, when an empty tuple is constructed, we
+/// will still allocate a value on the heap, but it's value will be
+/// meaningless.
+///
+/// (In theory we could store the value -1, although this could cause confusion
+/// since -1 is currently associated with (null 'typ) expressions).
+///
+/// We can assume through our type checker that nothing improper will happen
+/// that would try to access and use this value stored in memory (since no
+/// tuple-ref expressions will type-check on an empty tuple).
 fn gen_instr_tuple(
     exprs: &Vector<TypedExpr>,
     state: &mut CodeGenerateState,
@@ -278,15 +268,14 @@ fn gen_instr_tuple(
     //
     // We also allocate the values backwards in memory, so we start bringing
     // state.mem_index all the way forward, then iterate through backwards,
-    // and them move it back all the way forward so none of the values
-    // get overwritten.
+    // and reset state.mem_index to the first free index once we are finished.
     let tuple_head_idx = state.mem_index;
     state.mem_index += tuple_wasm_size;
     for _ in 0..tuple_part_wasm_types.len() {
         state.mem_index -= 4;
         tuple_instr.push(Instruction::I32Store(0, state.mem_index));
     }
-    state.mem_index += tuple_wasm_size;
+    state.mem_index = tuple_head_idx + tuple_wasm_size;
 
     // Finally, leave the index for the head of the tuple on top of the stack.
     tuple_instr.push(Instruction::I32Const(tuple_head_idx as i32));
@@ -295,15 +284,8 @@ fn gen_instr_tuple(
 
 /// Generate instructions for a tuple-ref expression.
 ///
-/// The general strategy (based on the way tuples are constructed) is to
-/// calculate the wasm sizes of the tuple's components, and then iterate
-/// through the tuple's components until we are at the correct position (based
-/// on the key provided as a second argument to tuple-ref), and then load
-/// the value from memory.
-///
-/// TODO: I think this process can be rewritten in a functional/non-iterative
-/// manner. Try calculating curr_mem_offset by summing the first (key - 1)
-/// sizes of the tuple's types converted to wasm types.
+/// We can assume from the type checking that the argument `key` is a valid
+/// index into the tuple.
 fn gen_instr_tuple_get(
     tuple: &TypedExpr,
     key: u32,
@@ -311,26 +293,11 @@ fn gen_instr_tuple_get(
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let tuple_instr = gen_instr(tuple, state)?;
     let mut tuple_get_instr: Vec<Instruction> = vec![];
-    let mut curr_key: u32 = 0;
-    let mut curr_mem_offset: u32 = 0;
     match &tuple.typ {
-        Type::Tuple(inner_types) => {
-            for _ in 0..inner_types.len() {
-                match curr_key.cmp(&key) {
-                    Ordering::Equal => {
-                        tuple_get_instr.push(Instruction::I32Load(0, curr_mem_offset));
-                        break;
-                    }
-                    Ordering::Greater => {
-                        return Err(CodeGenerateError::from("Memory alignment error."))
-                    }
-                    Ordering::Less => {
-                        curr_mem_offset += 4; // all tuple components take up 4 bytes in memory
-                        curr_key += 1;
-                    }
-                }
-            }
-        }
+        // Since all types take up the same size (4 bytes) in our compiler,
+        // we do not need to look at the specific types of the components
+        // of the tuple.
+        Type::Tuple(_inner_types) => tuple_get_instr.push(Instruction::I32Load(0, 4 * key)),
         _ => {
             return Err(CodeGenerateError::from(
                 "get_instr_tuple_get called with non-tuple expression.",
@@ -345,13 +312,13 @@ fn gen_instr_tuple_get(
 /// A List expression is stored as simply a pair of values: a car (sometimes
 /// a pointer), and a cdr (always a pointer).
 ///
-/// The overall strategy is to first generate the instructions for the car and
-/// cdr of of the expression (leaving two values, most likely pointers, on the
-/// stack), and then store the two stack values in memory, leaving an index to
-/// the cons pair on the stack.
+/// Our strategy is to first generate the instructions for the car and cdr of
+/// the expression (leaving two values, most likely pointers, on the stack),
+/// and then store the two stack values in memory, leaving an index to the
+/// cons pair on the stack.
 fn gen_instr_cons(
-    first: &TypedExpr,
-    rest: &TypedExpr,
+    car: &TypedExpr,
+    cdr: &TypedExpr,
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut cons_instr: Vec<Instruction> = vec![];
@@ -361,36 +328,25 @@ fn gen_instr_cons(
     // on the stack. Both arguments are needed for the value to be
     // stored into linear memory (with I32Store or I64Store).
     cons_instr.push(Instruction::I32Const(0));
-    let mut first_instr = gen_instr(first, state)?;
-    cons_instr.append(&mut first_instr);
-    let first_wasm_type = ValueType::I32;
+    let mut car_instr = gen_instr(car, state)?;
+    cons_instr.append(&mut car_instr);
 
-    // See comment above for why this instruction is needed.
+    // See comment above for why this I32.const instruction is needed.
     cons_instr.push(Instruction::I32Const(0));
-    let mut rest_instr = gen_instr(rest, state)?;
-    cons_instr.append(&mut rest_instr);
+    let mut cdr_instr = gen_instr(cdr, state)?;
+    cons_instr.append(&mut cdr_instr);
 
+    // state.mem_index, by assumption, contains the first address of free space
+    // in the WebAssembly linear memory. In order, we:
+    // - store cdr value at mem[cons_idx + 4]
+    // - store car value at mem[cons_idx + 0]
+    // - push cons_idx in the store
+    // - update the next free index from state.mem_index to state.mem_index + 8
     let cons_idx = state.mem_index;
-    match first_wasm_type {
-        ValueType::I32 => {
-            // car is I32, cdr is I32
-            state.mem_index += 4;
-            cons_instr.push(Instruction::I32Store(0, state.mem_index));
-            state.mem_index -= 4;
-            cons_instr.push(Instruction::I32Store(0, state.mem_index));
-            state.mem_index += 8;
-        }
-        ValueType::I64 => {
-            // car is I64, cdr is I32
-            state.mem_index += 8;
-            cons_instr.push(Instruction::I32Store(0, state.mem_index));
-            state.mem_index -= 8;
-            cons_instr.push(Instruction::I64Store(0, state.mem_index));
-            state.mem_index += 12;
-        }
-        _ => return Err(CodeGenerateError::from("Unhandled wasm type.")),
-    }
+    cons_instr.push(Instruction::I32Store(0, state.mem_index + 4));
+    cons_instr.push(Instruction::I32Store(0, state.mem_index));
     cons_instr.push(Instruction::I32Const(cons_idx as i32));
+    state.mem_index += 8;
 
     Ok(cons_instr)
 }
@@ -399,7 +355,10 @@ fn gen_instr_cons(
 ///
 /// Evaluating the cons expression will leave a 32-bit pointer (the address of
 /// the cons structure in WebAssembly linear memory). To obtain the first
-/// component, we access the pointer contents with no offset.
+/// component, we access the pointer contents with 0 offset.
+///
+/// See `gen_instr_cons` for more information about how cons expressions
+/// are stored in linear memory.
 fn gen_instr_car(
     cons: &TypedExpr,
     state: &mut CodeGenerateState,
@@ -414,6 +373,9 @@ fn gen_instr_car(
 /// Evaluating the cons expression will leave a 32-bit pointer (the address of
 /// the cons structure in WebAssembly linear memory). To obtain the second
 /// component, we access the pointer contents with a 4-byte offset.
+///
+/// See `gen_instr_cons` for more information about how cons expressions
+/// are stored in linear memory.
 fn gen_instr_cdr(
     cons: &TypedExpr,
     state: &mut CodeGenerateState,
@@ -427,7 +389,8 @@ fn gen_instr_cdr(
 ///
 /// A null expression doesn't really store any meaningful information (its
 /// type is meaningful for type checking purposes), so we can just represent it
-/// with a dummy value.
+/// with a (unique) dummy value, which can be checked for explicitly by `null?`
+/// expressions.
 fn gen_instr_null(
     _typ: &Type,
     _state: &mut CodeGenerateState,
@@ -435,7 +398,7 @@ fn gen_instr_null(
     Ok(vec![Instruction::I32Const(-1)])
 }
 
-/// Generates instructions for a null? expression.
+/// Generate instructions for a null? expression.
 ///
 /// Our current implementation will allow non-List type expressions to appear
 /// as arguments, but the result value will always be false (i.e. any
@@ -466,6 +429,13 @@ fn gen_instr_is_null(
     }
 }
 
+/// Generate instructions for a pack expression.
+///
+/// Our strategy here is just to "look through" the pack to whatever value
+/// is actually stored inside. By the construction of our compiler, this will
+/// almost always be a tuple (since pack expressions are solely generated
+/// through closure conversion). This is safe since the values stored inside
+/// the pack are all calculated (constant in some sense) and type checked.
 fn gen_instr_pack(
     val: &TypedExpr,
     _sub: &Type,
@@ -475,6 +445,14 @@ fn gen_instr_pack(
     gen_instr(val, state)
 }
 
+/// Generate instructions for an unpack expression.
+///
+/// Our strategy here is just to "look through" the unpack expression and just
+/// treat it as a regular let-expression, where `var` has been bound to the
+/// value of `package`. This is safe since the values stored inside the pack
+/// are all calculated (constant in some sense) and type checked as a result
+/// of the only pack expressions being those generated through closure
+/// conversion.
 fn gen_instr_unpack(
     var: &str,
     package: &TypedExpr,
@@ -483,8 +461,8 @@ fn gen_instr_unpack(
     state: &mut CodeGenerateState,
 ) -> Result<Vec<Instruction>, CodeGenerateError> {
     let mut let_instr: Vec<Instruction> = vec![];
-    let local_index = state.locals.len() as u32;
     let mut exp_instr = gen_instr(package, state)?;
+    let local_index = state.locals.len() as u32;
     state.locals.insert(var.to_string(), local_index);
     let_instr.append(&mut exp_instr);
     let_instr.push(Instruction::SetLocal(local_index));
@@ -493,6 +471,15 @@ fn gen_instr_unpack(
     Ok([let_instr, body_instr].concat())
 }
 
+/// Generate instructions for a function application expression.
+///
+/// Recall that as a result of lambda lifting, all lambda expressions will be
+/// outside of our "main" program that we are trying to evaluate - hence
+/// when given a function, we can assume it will evaluate to an index within
+/// our function table (stored in state.funcs). Thus, we simply push all of
+/// our arguments onto the stack followed by the function index, and then use
+/// WebAssembly's CallIndirect to call the appropriate function in our table,
+/// consuming all of the arguments we provided.
 fn gen_instr_fn_app(
     func: &TypedExpr,
     args: &Vector<TypedExpr>,
@@ -507,30 +494,10 @@ fn gen_instr_fn_app(
     fn_app_instr.append(&mut func_idx_instr);
     fn_app_instr.push(Instruction::CallIndirect(0, 0));
     Ok(fn_app_instr)
-    // match &*func.kind {
-    //     ExprKind::Id(name) => {
-    //         let func_idx: u32 = match state.funcs.get(name) {
-    //             Some(idx) => *idx,
-    //             None => {
-    //                 return Err(CodeGenerateError::from(
-    //                     "Function name not found in functions maps!",
-    //                 ))
-    //             }
-    //         };
-    //         let mut fn_app_instr: Vec<Instruction> = vec![];
-    //         for exp in args {
-    //             let mut exp_instr = gen_instr(exp, state)?;
-    //             fn_app_instr.append(&mut exp_instr);
-    //         }
-    //         fn_app_instr.push(Instruction::Call(func_idx));
-    //         Ok(fn_app_instr)
-    //     }
-    //     _ => Err(CodeGenerateError::from(
-    //         "Function application does not appear to be correctly lambda lifted!",
-    //     )),
-    // }
 }
 
+/// Generate instructions for an arbitrary expression kind by dispatching
+/// on the kind of the expression.
 pub fn gen_instr(
     exp: &TypedExpr,
     state: &mut CodeGenerateState,
@@ -538,7 +505,7 @@ pub fn gen_instr(
     let instructions: Result<Vec<Instruction>, CodeGenerateError> = match &*exp.kind {
         ExprKind::Num(x) => Ok(vec![Instruction::I32Const(*x)]),
         ExprKind::Bool(x) => Ok(vec![Instruction::I32Const(*x as i32)]),
-        ExprKind::Str(_) => panic!("Unhandled gen_instr case: Str"),
+        ExprKind::Str(_) => Err(CodeGenerateError::from("Unhandled gen_instr case: Str")),
         ExprKind::Id(sym) => match state.locals.get(sym) {
             Some(local_idx) => Ok(vec![Instruction::GetLocal(*local_idx)]),
             None => match state.funcs.get(sym) {

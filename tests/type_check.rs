@@ -145,9 +145,8 @@ fn test_typecheck_lists_happy() {
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     assert_eq!(typed_exp.typ, Type::List(Box::new(Type::Str)));
 
-    // NOTE: these two cases probably looks weird, but it is the simplest solution
-    // we can just assume car/cdr of an empty list is the type of the list's items
-    // or the type of the list respectively (or that the program just panics?)
+    // Note we define the types of (car lst) and (cdr lst) uniformly;
+    // i.e. the types are the same even if the lists are empty.
     let exp = lexpr::from_str("(car (null int))").unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap()).unwrap();
     assert_eq!(typed_exp.typ, Type::Int);
@@ -214,33 +213,23 @@ fn test_typecheck_tuples_happy() {
 
 #[test]
 fn test_typecheck_tuples_sad() {
-    // types do not match
-    let exp = lexpr::from_str(r#"(make-tuple (3 "hello") : (bool string))"#).unwrap();
-    let typed_exp = type_check(&parse(&exp).unwrap());
-    assert_eq!(typed_exp.is_err(), true);
-
-    // too few types
-    let exp = lexpr::from_str(r#"(make-tuple (3 "hello") : (int))"#).unwrap();
-    let typed_exp = type_check(&parse(&exp).unwrap());
-    assert_eq!(typed_exp.is_err(), true);
-
-    // too too many types
-    let exp = lexpr::from_str(r#"(make-tuple (3 "hello") : (int string bool))"#).unwrap();
-    let typed_exp = type_check(&parse(&exp).unwrap());
-    assert_eq!(typed_exp.is_err(), true);
-
     // key too large
-    let exp = lexpr::from_str(r#"(get-nth (make-tuple (3 "hello") : (int string)) 2)"#).unwrap();
+    let exp = lexpr::from_str(r#"(tuple-ref (make-tuple 3 "hello") 2)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap());
     assert_eq!(typed_exp.is_err(), true);
 
     // key is not a number
-    let exp = lexpr::from_str(r#"(get-nth (make-tuple (3 "hello") : (int string)) true)"#).unwrap();
+    let exp = lexpr::from_str(r#"(tuple-ref (make-tuple 3 "hello") true)"#).unwrap();
+    let parsed = parse(&exp);
+    assert_eq!(parsed.is_err(), true);
+
+    // first expression is not a tuple
+    let exp = lexpr::from_str(r#"(tuple-ref (cons 3 (null int)) 0)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap());
     assert_eq!(typed_exp.is_err(), true);
 
-    // first expression is not a tuple
-    let exp = lexpr::from_str(r#"(get-nth (cons 3 (null int)) 0)"#).unwrap();
+    // tuple is empty, so no tuple-ref should be valid
+    let exp = lexpr::from_str(r#"(tuple-ref (make-tuple) 0)"#).unwrap();
     let typed_exp = type_check(&parse(&exp).unwrap());
     assert_eq!(typed_exp.is_err(), true);
 }

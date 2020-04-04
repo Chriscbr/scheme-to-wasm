@@ -168,6 +168,11 @@ fn tc_lambda_with_env(
 }
 
 fn tc_begin_with_env(exps: &Vector<Expr>, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {
+    if exps.is_empty() {
+        return Err(TypeCheckError::from(
+            "Begin expression contains no subexpressions!",
+        ));
+    }
     // Note: even though we only return the type of the
     // last expression within the 'begin' S-expression, we still want to
     // type-check the entire array in case any type errors pop up
@@ -190,7 +195,7 @@ fn tc_set_bang_with_env(
 ) -> Result<TypedExpr, TypeCheckError> {
     let expected_typ = env
         .find(var)
-        .ok_or_else(|| "Variable assignment cannot occur before it has been defined!")?
+        .ok_or_else(|| "Variable in set! cannot be found within the local scope - the variable must already be defined by a function parameter or a let expression.")?
         .clone();
     let new_val = tc_with_env(new_val, env)?;
     if new_val.typ == expected_typ {

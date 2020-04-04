@@ -74,6 +74,13 @@ fn test_compile_let() {
 }
 
 #[test]
+fn test_compile_let_multiple_bindings() {
+    let exp = parse(&lexpr::from_str("(let ((a 3) (b 5) (c 7)) (* (+ a b) c))").unwrap()).unwrap();
+    let output = test_runner_exp(exp, "let_multiple_bindings.wasm");
+    assert_eq!(output, Value::I32(56));
+}
+
+#[test]
 fn test_compile_tuple() {
     let exp = parse(&lexpr::from_str("(tuple-ref (make-tuple 3 4) 1)").unwrap()).unwrap();
     let output = test_runner_exp(exp, "tuple1.wasm");
