@@ -307,12 +307,14 @@ fn test_compile_named_func() {
 
 #[test]
 fn test_compile_func_two_arg() {
+    // Note that by using (-) over some other commutative operator, we are
+    // testing that the arguments are also inserted in the right order.
     let exp =
-        parse(&lexpr::from_str("((lambda ((x : int) (y : int)) : int (* x y)) 5 6)").unwrap())
+        parse(&lexpr::from_str("((lambda ((x : int) (y : int)) : int (- x y)) 11 5)").unwrap())
             .unwrap();
     let prog = compile_exp(&exp).unwrap();
     let output = test_runner_prog(prog, "func_two_arg.wasm");
-    assert_eq!(output, Value::I32(30));
+    assert_eq!(output, Value::I32(6));
 }
 
 #[test]
@@ -399,6 +401,24 @@ fn test_compile_prepend() {
     let prog = compile_exp(&exp).unwrap();
     let output = test_runner_prog(prog, "prepend1.wasm");
     assert_eq!(output, Value::I32(4));
+}
+
+#[test]
+fn test_compile_higher_order_func() {
+    let exp = parse(
+        &lexpr::from_str(
+            r#"
+(let ((apply (lambda ((fn : (-> int int)) (x : int)) : int (fn x))))
+  (let ((double (lambda ((num : int)) : int (* num 2))))
+    (apply double 3)))
+                "#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let prog = compile_exp(&exp).unwrap();
+    let output = test_runner_prog(prog, "higher_order_func.wasm");
+    assert_eq!(output, Value::I32(6));
 }
 
 #[test]

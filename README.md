@@ -1,3 +1,14 @@
+### Debugging
+If you are trying to debug the code generation part of the compiler (and would like to see which WebAssembly instructions are getting generated) I recommend downloading [wabt](https://github.com/WebAssembly/wabt), the WebAssembly binary toolkit.
+It contains the command-line tool `wasm2wat` which can be used like such (assuming you have added the toolkit to your PATH variable):
+
+```
+$ wasm2wat wasm-output/math.wasm
+```
+
+Add the flag `--no-check` to the end if the generated code does not pass the WebAssembly validation phase but you still want to see what it generated.
+Add the flag `--verbose` if you want more detailed information about what the different WebAssembly instructions do (such as the extra parameters on `I32Load`, `CallIndirect`, etc.).
+
 ### Error Handling
 We try to use idiomatic Rust to handle error propagation at different stages of the compiler, by constructing specific structs (like `TypeCheckError`, `CodeGenerateError`, etc.) implementing `std::error::Error` to distinguish where an error occurred.
 It might be slightly more idiomatic if we changed errors to be explicit enums (like `TypeCheckError::InvalidArgumentTypes`, `TypeCheckError::UnrecognizedIdentifier`, etc.) but we chose against this for sake of development speed.
