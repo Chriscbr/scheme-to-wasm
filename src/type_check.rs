@@ -42,7 +42,10 @@ pub fn validate_lambda_type(
                 ))
             }
         }
-        _ => Err(TypeCheckError::from("Expected a function type.")),
+        _ => Err(TypeCheckError(format!(
+            "Expected a function type, instead found {}",
+            fn_type
+        ))),
     }
 }
 
@@ -340,15 +343,18 @@ fn tc_apply_with_env(
     env: &TypeEnv,
 ) -> Result<TypedExpr, TypeCheckError> {
     let func = tc_with_env(func, env)?;
-    let params = tc_array_with_env(&args, env)?;
-    let param_types = params
+    let typed_args = tc_array_with_env(&args, env)?;
+    let arg_types = typed_args
         .iter()
         .map(|typed_exp| typed_exp.typ.clone())
         .collect::<Vector<Type>>();
 
     // TODO: is this variable (and the function call) appropriately named?
-    let lambda_type = validate_lambda_type(&func.typ, &param_types)?;
-    Ok(TypedExpr::new(lambda_type, ExprKind::FnApp(func, params)))
+    let lambda_type = validate_lambda_type(&func.typ, &arg_types)?;
+    Ok(TypedExpr::new(
+        lambda_type,
+        ExprKind::FnApp(func, typed_args),
+    ))
 }
 
 fn tc_is_null_with_env(exp: &Expr, env: &TypeEnv) -> Result<TypedExpr, TypeCheckError> {

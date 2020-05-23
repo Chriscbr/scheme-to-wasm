@@ -3,6 +3,14 @@ use scheme_to_wasm::parse::parse;
 use scheme_to_wasm::parse::parse_type;
 use scheme_to_wasm::types::Type;
 
+// We don't currently have any unit tests for specifically validating that
+// expressions are correctly parsed. This could be added, but it is frankly
+// unnecessary since nearly all other unit tests in this library already
+// utilize the `parse` function, so any nuanced aspect of parsing should
+// ideally be noticed in another compiler pass (in particular, the
+// type checker tries to cover as much of the language spec as thoroughly
+// as possible).
+
 #[test]
 fn test_parse_int_bounds() {
     let exp = lexpr::from_str("2147483648").unwrap();

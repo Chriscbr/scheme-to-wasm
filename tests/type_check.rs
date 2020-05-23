@@ -358,6 +358,7 @@ fn test_typecheck_sideeffects_sad() {
 #[test]
 fn test_typecheck_local_scoping() {
     // local variable overrides outer variable
+    // TODO: consider making this behavior disallowed
     let exp = lexpr::from_str(
         r#"(let ((x "hello"))
                 (let ((x 23))

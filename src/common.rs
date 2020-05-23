@@ -129,6 +129,7 @@ impl TypedExpr {
 /// and any other expression types that are developed later.
 /// TODO: add (not x) operation
 /// TODO: add (string-equal? x y) operation
+/// TODO: add (str-len x) operation
 /// TODO: add (incr x) and (decr x) operations
 /// TODO: add (set-car! x) and (set-cdr! x) operations
 #[allow(clippy::large_enum_variant)]
